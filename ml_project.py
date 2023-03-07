@@ -13,6 +13,11 @@ import streamlit as st
 import random
 from PIL import Image
 import altair as alt
+from htbuilder import HtmlElement, div, hr, a, p, img, styles
+from htbuilder.units import percent, px
+import pandas_profiling
+from streamlit_pandas_profiling import st_profile_report
+
 
 
 
@@ -24,349 +29,319 @@ data_url = "http://lib.stat.cmu.edu/datasets/boston"
 # data = "C:\Users\DELL\Desktop\streamlit\images\data-processing.png"
 
 # setting up the page streamlit
-ilr = "./images/linear-regression.png"
+
 st.set_page_config(
-    page_title="Linear Regression App ", layout="wide", page_icon=ilr
+    page_title="Linear Regression App ", layout="wide", page_icon="./images/linear-regression.png"
 )
 
-st.title("Understanding Linear Regression💡")
+
+def img_to_bytes(img_path):
+    img_bytes = Path(img_path).read_bytes()
+    encoded = base64.b64encode(img_bytes).decode()
+    return encoded
+
+
+
+def main():
+    def _max_width_():
+        max_width_str = f"max-width: 1000px;"
+        st.markdown(
+            f"""
+        <style>
+        .reportview-container .main .block-container{{
+            {max_width_str}
+        }}
+        </style>
+        """,
+            unsafe_allow_html=True,
+        )
+
+
+    # Hide the Streamlit header and footer
+    def hide_header_footer():
+        hide_streamlit_style = """
+                    <style>
+                    footer {visibility: hidden;}
+                    </style>
+                    """
+        st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
+    # increases the width of the text and tables/figures
+    _max_width_()
+
+    # hide the footer
+    hide_header_footer()
+
+image_nyu = Image.open('images/nyu.png')
+st.image(image_nyu, width=100)
+
+st.title("Linear Regression Lab 🧪")
 
 # navigation dropdown
-app_mode = st.sidebar.selectbox('Select Page',['Background','Main App'])
+
+st.sidebar.header("Dashboard")
+st.sidebar.markdown("---")
+app_mode = st.sidebar.selectbox('🔎 Select Page',['Introduction','Visualization','Prediction'])
+select_dataset =  st.sidebar.selectbox('💾 Select Dataset',["Wine Quality","Real Estate"])
+if select_dataset == "Wine Quality":
+    df = pd.read_csv("wine_quality_red.csv")
+else: 
+    df = pd.read_csv("real_estate.csv")
+
+list_variables = df.columns
+select_variable =  st.sidebar.selectbox('🎯 Select Variable to Predict',list_variables)
 # page 1 
-if app_mode == 'Background':
-    image = Image.open('images\Linear-Regression1.webp')
-
-    st.image(image, caption='Into the ML World:')
-    st.subheader('🎯 Definition') 
-    st.write(" Linear regression is a statistical technique used to model the relationship between a dependent variable"
-              " and one or more independent variables. The technique assumes that the relationship between the variables is linear, meaning that" 
-              " a change in one variable is proportional to a change in the other variable(s)")
-    st.subheader(" ")
-    st.subheader('🎯 Objectives of Linear Regression:') 
-    st.write('* Estimate the relationshop between the output variable (or response) and input (or predictor/explanatory) variable')
-    st.write('* To predict the value of an output variable based on the value of an input variable')
-
-    st.write("* also to help you understand better --------- for students as joke intended? write or not write")
-    st.subheader(" ")
-    st.subheader('🎯 Use Cases:')
-    st.write("* Finance")
-    st.write("* Marketing")
-    st.write("* Economics")
-    st.write("* Social Science")
-    st.write("* Engineering")
-    st.subheader(" ")
-    st.subheader(' Let\'s get started 🚀') 
-
-#page 2
-if app_mode == 'Main App':
-    st.sidebar.title('🗃️ Choosing Data Source')
-    st.sidebar.markdown('Let\'s start!!')
-    with st.sidebar:
-        with st.expander(" Select Dataset 💾"):
-            choose_data = st.radio(
-                "Choose Toy dataset or real world dataset 💾",
-                ('Toy dataset - Diabetes', 'real world'))
-            
-            if choose_data == 'Toy dataset - Diabetes':
-                add_dataset = "Diabetes"
-            else:
-                add_dataset = st.selectbox(
-                    "Which dataset would you like to be select?",
-                    ("Wine Quality","California Housing")
-                )
-        with st.expander("Do you have your own dataset? Upload your data here!! 👇"):
-            upload_dataset = st.file_uploader("Choose a file")
+if app_mode == 'Introduction':
+    image_header = Image.open('./images/Linear-Regression1.webp')
+    st.image(image_header, width=600)
 
 
-    #loading the dataset with cache
-    @st.cache_data
-    def load(data):   
-        if add_dataset == "Diabetes":
-            data = load_diabetes()
-            db_df = pd.DataFrame(data.data, columns=data.feature_names)
-            db_df['target'] = data.target
-
-        elif add_dataset == "California Housing":
-            data = fetch_california_housing()
-            db_df = pd.DataFrame(data.data, columns=data.feature_names)
-            # adding the target column
-            db_df['target'] = data.target
-
-        # elif add_dataset == "Boston":
-        #     db_df = pd.read_csv(data_url, sep="\s+", skiprows=22, header=None)
-        
-        # elif add_dataset == "Medical Cost: Insurance":
-        #     #data = fetch_california_housing()
-        #     db_df = pd.read_csv('dataset\insurance.csv')
-        #     cat_cols = ["sex","children","smoker","region"]
-        #     df_encode = pd.get_dummies(data = db_df, prefix ='OHE', prefix_sep= '_',
-        #                             columns= cat_cols,drop_first= True, dtype= 'int8')
-        elif add_dataset == "Wine Quality":
-            db_df = pd.read_csv('dataset\winequality-red.csv')
-
-        return db_df
-    db_df = load(data = add_dataset)
-
-    #displaying dataframe
-    def displaying_df(db_df):
-        if st.sidebar.checkbox("Display data 💾", False):
-            st.subheader('Checking out the datset 👀')
-            if upload_dataset is not None:
-                # checking excel or csv
-                if 'csv' in upload_dataset.name:
-                    db_df = pd.read_csv(upload_dataset)
-                else:
-                    db_df = pd.read_excel(upload_dataset)
-                # checking if any column is not integer or float. That means not clean
-                c=0
-                c = sum(1 for i in db_df.dtypes if (i!= int and i!= float))
-                if c>1:
-                    st.error("Unclean dataset will produce error. Clean dataset first!")
-                #length of the db
-                length = st.slider("Change the size", 0, len(db_df),7)
-                st.write(upload_dataset)
-
-                #showing upload datset name upload_dataset.name.split(".")[0] 
-                st.subheader("Showing " + upload_dataset.name.split(".")[0] + f" top {length} Dataset 💾")
-                st.dataframe(db_df.head(length), 1300, 300)
-                
-
-            # choosing sklearn or local dataset
-            else:
-                #length of the db
-                length = st.slider("Change the size", 0, len(db_df),25)
-
-                st.subheader("Showing " + add_dataset + f" top {length} Dataset 💾")
-                st.dataframe(db_df.head(length), 1300, 500)
-                with st.expander("🔤 Description"):
-                    if add_dataset == "Diabetes":
-                        col1, col2, col3,col4,col5,col6,col7,col8,col9,col10 = st.columns(10)
-                        col1.markdown(" **Age** ")
-                        col1.markdown("age in years")
-                        col2.markdown(" **bmi** ")
-                        col2.markdown("body mass index")
-                        col3.markdown(" **bp** ")
-                        col3.markdown("average blood pressure")
-                        col4.markdown(" **s1** ")
-                        col4.markdown("tc: total serum cholesterol")
-                        col5.markdown(" **s2** ")
-                        col5.markdown("ldl:low-density lipoproteins")
-                        col6.markdown(" **s3** ")
-                        col6.markdown("hdl:high-density lipoproteins")
-                        col7.markdown(" **s4** ")
-                        col7.markdown("tch:, total cholesterol / HDL")
-                        col8.markdown(" **s5** ")
-                        col8.markdown("ltg, possibly log of serum triglycerides level")
-                        col9.markdown(" **s6** ")
-                        col9.markdown("glu, blood sugar level")
-                        col10.markdown("target")
-                        col10.markdown("Disease Progression")
-
-                    if add_dataset == "Wine Quality":
-                        col1, col2, col3,col4,col5,col6,col7,col8,col9,col10 = st.columns(10)
-                        col1.markdown(" **fixed acidity** ")
-                        col1.markdown("most acids involved with wine or fixed or nonvolatile (do not evaporate readily)")
-                        col2.markdown(" **volatile acidity** ")
-                        col2.markdown("the amount of acetic acid in wine, which at too high of levels can lead to an unpleasant, vinegar taste")
-                        col3.markdown(" **citric acid** ")
-                        col3.markdown("found in small quantities, citric acid can add 'freshness' and flavor to wines")
-                        col4.markdown(" **residual sugar** ")
-                        col4.markdown("the amount of sugar remaining after fermentation stops, it's rare to find wines with less than 1 gram/liter")
-                        col5.markdown(" **chlorides** ")
-                        col5.markdown("the amount of salt in the wine")
-                        col6.markdown(" **free sulfur dioxide** ")
-                        col6.markdown("the free form of SO2 exists in equilibrium between molecular SO2 (as a dissolved gas) and bisulfite ion; it prevents ")
-                        col7.markdown(" **total sulfur dioxide** ")
-                        col7.markdown("amount of free and bound forms of S02; in low concentrations, SO2 is mostly undetectable in wine, but at free SO2 ")
-                        col8.markdown(" **density** ")
-                        col8.markdown("the density of water is close to that of water depending on the percent alcohol and sugar content")
-                        col9.markdown(" **pH** ")
-                        col9.markdown("describes how acidic or basic a wine is on a scale from 0 (very acidic) to 14 (very basic); most wines are between 3-4 on the ")
-                        col10.markdown(" **sulphates** ")
-                        col10.markdown("a wine additive which can contribute to sulfur dioxide gas (S02) levels, wich acts as an antimicrobia")
-                    
-                    if add_dataset == "California Housing":
-                        col1, col2, col3,col4,col5,col6,col7,col8 = st.columns(8)
-                        col1.markdown(" **MedInc** ")
-                        col1.markdown("median income in block group")
-                        col2.markdown(" **HouseAge** ")
-                        col2.markdown("median house age in block group")
-                        col3.markdown(" **AveRooms** ")
-                        col3.markdown("average number of rooms per household")
-                        col4.markdown(" **AveBedrms ** ")
-                        col4.markdown("average number of bedrooms per household")
-                        col5.markdown(" **Population** ")
-                        col5.markdown("block group population")
-                        col6.markdown(" **AveOccup ** ")
-                        col6.markdown("average number of household members")
-                        col7.markdown(" **Latitude** ")
-                        col7.markdown("block group latitude")
-                        col8.markdown(" **Longitude** ")
-                        col8.markdown("block group longitude")
-        return db_df
-    db_df = displaying_df(db_df)
-
-    # display describe
-    if st.sidebar.checkbox("Display describe 🔤", False):
-        width0 = st.sidebar.slider("plot width", 200, 1000, 700)
-        height0 = st.sidebar.slider("plot height", 200, 1000, 500)
-        tab1, tab2 = st.tabs(["🗃 Data","📈 Chart"])   
-        tab1.subheader(" Describe 🔤")
-        tab1.write(db_df.describe())
-
-        diff_plot = tab2.selectbox(
-            "Which plot would you like to be Select?",
-            ( "Bar plot", "scatter plot","pair plot")
-        )
-        if diff_plot == "Bar plot":
-            value = tab2.selectbox('Choose value',db_df.columns)
-            # chart = alt.Chart(db_df).mark_bar().encode(
-            #     x=value,
-            #     y="count()",
-            #     tooltip=[value]
-            # ).interactive()
-            # tab2.altair_chart(chart, theme="streamlit", use_container_width=True)
-
-            plot1 = px.histogram(data_frame=db_df, x=value)
-            plot1.update_layout(
-                title='Count Chart',
-                xaxis_title=value,
-                yaxis_title='Count'
-            )
-            plot1.update_layout(height=height0,width= width0)
-            tab2.plotly_chart(plot1)
-            
-        if diff_plot == "scatter plot":
-            x_axis = tab2.selectbox('X axis', options=db_df.columns)
-            y_axis = tab2.selectbox('Y axis', options=db_df.columns)
-            plot = px.scatter(data_frame=db_df, x=x_axis, y=y_axis)
-            plot.update_layout(
-                title='Scatter Chart',
-                xaxis_title=x_axis,
-                yaxis_title=y_axis
-            )
-            plot.update_layout(height=height0,width= width0)
-            tab2.plotly_chart(plot)
-
-        if diff_plot == "pair plot":          
-            plot4 = px.scatter_matrix(db_df)
-            tab2.pyplot(plot4)
-
-    #displaying correlation
-    if st.sidebar.checkbox("Display Correlation ✨ ", False):
-        tab1, tab2 = st.tabs(["🗃 Data","📈 Chart"])    
-        tab1.subheader("Data Tab 💾")
-        corr = db_df.corr()
-        tab1.dataframe(corr, 1000)
-
-        tab2.subheader("Chart Tab 📉")
-        width1 = st.sidebar.slider("plot width", 1, 25, 10)
-        height1 = st.sidebar.slider("plot height", 1, 25, 5)
-        fig,ax = plt.subplots(figsize=(width1, height1))
-        sns.heatmap(db_df.corr(),cmap= sns.cubehelix_palette(8),annot = True, ax=ax)
-        tab2.write(fig)
+    st.markdown("### 00 - Show  Dataset")
+    if select_dataset == "Wine Quality":
+        col1, col2, col3,col4,col5,col6,col7,col8,col9,col10 = st.columns(10)
+        col1.markdown(" **fixed acidity** ")
+        col1.markdown("most acids involved with wine or fixed or nonvolatile (do not evaporate readily)")
+        col2.markdown(" **volatile acidity** ")
+        col2.markdown("the amount of acetic acid in wine, which at too high of levels can lead to an unpleasant, vinegar taste")
+        col3.markdown(" **citric acid** ")
+        col3.markdown("found in small quantities, citric acid can add 'freshness' and flavor to wines")
+        col4.markdown(" **residual sugar** ")
+        col4.markdown("the amount of sugar remaining after fermentation stops, it's rare to find wines with less than 1 gram/liter")
+        col5.markdown(" **chlorides** ")
+        col5.markdown("the amount of salt in the wine")
+        col6.markdown(" **free sulfur dioxide** ")
+        col6.markdown("the free form of SO2 exists in equilibrium between molecular SO2 (as a dissolved gas) and bisulfite ion; it prevents ")
+        col7.markdown(" **total sulfur dioxide** ")
+        col7.markdown("amount of free and bound forms of S02; in low concentrations, SO2 is mostly undetectable in wine, but at free SO2 ")
+        col8.markdown(" **density** ")
+        col8.markdown("the density of water is close to that of water depending on the percent alcohol and sugar content")
+        col9.markdown(" **pH** ")
+        col9.markdown("describes how acidic or basic a wine is on a scale from 0 (very acidic) to 14 (very basic); most wines are between 3-4 on the ")
+        col10.markdown(" **sulphates** ")
+        col10.markdown("a wine additive which can contribute to sulfur dioxide gas (S02) levels, wich acts as an antimicrobia")
+    else:
+        col1, col2, col3,col4,col5,col6,col7,col8,col9,col10,col11,col12,col13,col14 = st.columns(14)
+        col1.markdown(" **CRIM** ")
+        col1.markdown("per capita crime rate by town")
+        col2.markdown(" **ZN** ")
+        col2.markdown("proportion of presidential land zoned for lots over 25,000 sq.ft.")
+        col3.markdown(" **CHAS** ")
+        col3.markdown("Charles River dummy variable (= 1 if tract bounds river; 0 otherwise")
+        col4.markdown(" **NOX** ")
+        col4.markdown("nitric oxides concentration (parts per 10 million)")
+        col5.markdown(" **RM** ")
+        col5.markdown("average number of rooms per dwelling")
+        col6.markdown(" **AGE** ")
+        col6.markdown("proportion of owner-occupied units built prior to 1940")
+        col7.markdown(" **DIS** ")
+        col7.markdown("weighted distances to five Boston employment centres")
+        col8.markdown(" **RAD** ")
+        col8.markdown("index of accessibility to radial highways")
+        col9.markdown(" **TAX** ")
+        col9.markdown("full-value property-tax rate per $10,000")
+        col10.markdown(" **PTRATIO** ")
+        col10.markdown("pupil-teacher ratio by town")                        
+        col11.markdown(" **B** ")
+        col11.markdown("1000(Bk - 0.63)^2 where Bk is the proportion of blacks by town")
+        col12.markdown(" **LSTAT** ")
+        col12.markdown("percentage lower status of the population") 
+        col13.markdown(" **MEDV** ")
+        col13.markdown("Median value of owner-occupied homes in $1000's") 
+        col14.markdown(" **INDUS** ")
+        col14.markdown("proportion of non-retail business acres per town") 
+    num = st.number_input('No. of Rows', 5, 10)
+    head = st.radio('View from top (head) or bottom (tail)', ('Head', 'Tail'))
+    if head == 'Head':
+        st.dataframe(df.head(num))
+    else:
+        st.dataframe(df.tail(num))
+    
+    st.markdown("Number of rows and columns helps us to determine how large the dataset is.")
+    st.text('(Rows,Columns)')
+    st.write(df.shape)
 
 
-    # choosing the target and the feature column 
-    target_choice = st.selectbox('Select your target', db_df.columns)
+    st.markdown("### 01 - Description")
+    st.dataframe(df.describe())
 
-    # preprocess 
-    #def preprocess
 
-    #prediction
-    def predict(target_choice):
+
+    st.markdown("### 02 - Missing Values")
+    st.markdown("Missing values are known as null or NaN values. Missing data tends to **introduce bias that leads to misleading results.**")
+    dfnull = df.isnull().sum()/len(df)*100
+    totalmiss = dfnull.sum().round(2)
+    st.write("Percentage of total missing values:",totalmiss)
+    st.write(dfnull)
+    if totalmiss <= 30:
+        st.success("Looks good! as we have less then 30 percent of missing values.")
+    else:
+        st.warning("Poor data quality due to greater than 30 percent of missing value.")
+        st.markdown(" > Theoretically, 25 to 30 percent is the maximum missing values are allowed, there's no hard and fast rule to decide this threshold. It can vary from problem to problem.")
+
+    st.markdown("### 03 - Completeness")
+    st.markdown(" Completeness is defined as the ratio of non-missing values to total records in dataset.") 
+    # st.write("Total data length:", len(df))
+    nonmissing = (df.notnull().sum().round(2))
+    completeness= round(sum(nonmissing)/len(df),2)
+    st.write("Completeness ratio:",completeness)
+    st.write(nonmissing)
+    if completeness >= 0.80:
+        st.success("Looks good! as we have completeness ratio greater than 0.85.")
+           
+    else:
+        st.success("Poor data quality due to low completeness ratio( less than 0.85).")
+
+    st.markdown("### 04 - Complete Report")
+    if st.button("Generate Report"):
+
+        pr = df.profile_report()
+        st_profile_report(pr)
+
+
+if app_mode == 'Visualization':
+    st.markdown("## Visualization")
+    symbols = st.multiselect("Select two variables",list_variables, )
+    width1 = st.sidebar.slider("plot width", 1, 25, 10)
+    #symbols = st.multiselect("", list_variables, list_variables[:5])
+    tab1, tab2= st.tabs(["Line Chart","📈 Correlation"])    
+
+    tab1.subheader("Line Chart")
+    st.line_chart(data=df, x=symbols[0],y=symbols[1], width=0, height=0, use_container_width=True)
+    st.write(" ")
+    st.bar_chart(data=df, x=symbols[0], y=symbols[1], use_container_width=True)
+
+    tab2.subheader("Correlation Tab 📉")
+    fig,ax = plt.subplots(figsize=(width1, width1))
+    sns.heatmap(df.corr(),cmap= sns.cubehelix_palette(8),annot = True, ax=ax)
+    tab2.write(fig)
+
+
+    st.write(" ")
+    st.write(" ")
+    st.markdown("### Pairplot")
+
+    df2 = df[[list_variables[0],list_variables[1],list_variables[2],list_variables[3],list_variables[4]]]
+    fig3 = sns.pairplot(df2)
+    st.pyplot(fig3)
+
+
+
+
+if app_mode == 'Prediction':
+    st.markdown("## Prediction")
+    train_size = st.sidebar.number_input("Train Set Size", min_value=0.00, step=0.01, max_value=1.00, value=0.70)
+    new_df= df.drop(labels=select_variable, axis=1)  #axis=1 means we drop data by columns
+    list_var = new_df.columns
+    output_multi = st.multiselect("Select Explanatory Variables", list_var)
+
+    def predict(target_choice,train_size,new_df,output_multi):
         #independent variables / explanatory variables
         #choosing column for target
-        x = db_df.drop(labels=target_choice, axis=1)  #axis=1 means we drop data by columns
-        y = db_df[target_choice]
+        new_df2 = new_df[output_multi]
+        x =  new_df2
+        y = df[target_choice]
         col1,col2 = st.columns(2)
         col1.subheader("Feature Columns top 25")
         col1.write(x.head(25))
         col2.subheader("Target Column top 25")
         col2.write(y.head(25))
-
-        X_train, X_test, y_train, y_test = train_test_split(x,y,test_size=0.25)
+        X_train, X_test, y_train, y_test = train_test_split(x,y,test_size=train_size)
         lm = LinearRegression()
         lm.fit(X_train,y_train)
         predictions = lm.predict(X_test)
 
         return X_train, X_test, y_train, y_test, predictions,x,y
-    X_train, X_test, y_train, y_test, predictions,x,y= predict(target_choice)
 
-    st.subheader('🎯 Result')
+    X_train, X_test, y_train, y_test, predictions,x,y= predict(select_variable,train_size,new_df,list_var)
 
-    # calculate these metrics easy-peasy
-    tab3, tab4 = st.tabs(["🗃 Data","📈 Chart"]) 
-    with tab3.expander("🔤 Description"):
-
-        st.write("* Mean Absolute Error (MAE): Measures the average absolute error.")
-        st.write("* Mean Squared Error (MSE): Measures the average squared difference between forecasts and true values.")
-        st.write("* Root Mean Squared Error (RMSE): Square root of the MSE. This metric is more robust to outliers than the MSE, as the square root limits the impact of large errors in the global error.")
-    
-    # callback to update emojis in Session State
-    # in response to the on_click event
-    def random_emoji():
-        if "emoji" not in st.session_state:
-            st.session_state.emoji = random.choice(emojis)
-        
-    if "emoji" not in st.session_state:
-        st.session_state.emoji = "👈"
-    else:
-        st.write("1) The model explains,", np.round(mt.explained_variance_score(y_test, predictions)*100,2),"% variance of the target w.r.t features is")
-        st.write("2) The Mean Absolute Error of model is:", np.round(mt.mean_absolute_error(y_test, predictions ),2))
-        st.write("3) MSE: ", np.round(mt.mean_squared_error(y_test, predictions),2))
-        st.write("4) The R-Square score of the model is " , np.round(mt.r2_score(y_test, predictions),2))
+    st.subheader('🎯 Results')
 
 
-
-    emojis = ["🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼"]
-
-    show_metrics = st.button(f"Show metrics {st.session_state.emoji}", on_click=random_emoji)
-
-
-
-    # choose plot
-    width_pred = tab4.slider("plot width", 300, 1000, 700)
-    height_pred = tab4.slider("plot height", 300, 1000, 500)
-
-    @st.cache_data 
-    def make_plot(width, height,y_test,predictions ):
-        # new df for pred and y_test
-        # data_join = pd.DataFrame({'y_test': y_test, 'predictions': predictions})
-        # chart1 = alt.Chart(data_join).mark_circle().encode(
-        # x='y_test',
-        # y='predictions',
-        # )
-        
-        # # Set the chart title and axis labels
-        # chart1 = chart1.properties(
-        #     title='Test vs Prediction',
-        #     width=width,
-        #     height=height
-        # ).interactive()
-        # tab2.altair_chart(chart1, theme="streamlit", use_container_width=True)
-        data_join = pd.DataFrame({'y_test': y_test, 'predictions': predictions})
-        plot2 = px.scatter(data_frame=data_join, x=y_test, y=predictions)
-        plot2.update_layout(
-            title='Scatter Chart',
-            xaxis_title="Y Test",
-            yaxis_title="Predictions"
-        )
-        plot2.update_layout(height=height,width= width)
-        tab4.plotly_chart(plot2)
-    
-        return data_join
-    
-    data_join = make_plot(width_pred, height_pred,y_test,predictions)
+    st.write("1) The model explains,", np.round(mt.explained_variance_score(y_test, predictions)*100,2),"% variance of the target feature")
+    st.write("2) The Mean Absolute Error of model is:", np.round(mt.mean_absolute_error(y_test, predictions ),2))
+    st.write("3) MSE: ", np.round(mt.mean_squared_error(y_test, predictions),2))
+    st.write("4) The R-Square score of the model is " , np.round(mt.r2_score(y_test, predictions),2))
 
 
 
 
+if __name__=='__main__':
+    main()
+
+st.markdown(" ")
+st.markdown("### 👨🏼‍💻 **App Contributors:** ")
+st.image(['images/gaetan.png'], width=100,caption=["Gaëtan Brison"])
+
+st.markdown(f"####  Link to Project Website [here]({'https://github.com/NYU-DS-4-Everyone/Linear-Regression-App'}) 🚀 ")
+st.markdown(f"####  Feel free to contribute to the app and give a ⭐️")
 
 
+def image(src_as_string, **style):
+    return img(src=src_as_string, style=styles(**style))
 
-    #coefficients
 
-    # if __name__ == '__main__':
-    #     main()
+def link(link, text, **style):
+    return a(_href=link, _target="_blank", style=styles(**style))(text)
+
+
+def layout(*args):
+
+    style = """
+    <style>
+      # MainMenu {visibility: hidden;}
+      footer {visibility: hidden;background - color: white}
+     .stApp { bottom: 80px; }
+    </style>
+    """
+    style_div = styles(
+        position="fixed",
+        left=0,
+        bottom=0,
+        margin=px(0, 0, 0, 0),
+        width=percent(100),
+        color="black",
+        text_align="center",
+        height="auto",
+        opacity=1,
+
+    )
+
+    style_hr = styles(
+        display="block",
+        margin=px(8, 8, "auto", "auto"),
+        border_style="inset",
+        border_width=px(2)
+    )
+
+    body = p()
+    foot = div(
+        style=style_div
+    )(
+        hr(
+            style=style_hr
+        ),
+        body
+    )
+
+    st.markdown(style, unsafe_allow_html=True)
+
+    for arg in args:
+        if isinstance(arg, str):
+            body(arg)
+
+        elif isinstance(arg, HtmlElement):
+            body(arg)
+
+    st.markdown(str(foot), unsafe_allow_html=True)
+
+def footer2():
+    myargs = [
+        "👨🏼‍💻 Made by ",
+        link("https://github.com/NYU-DS-4-Everyone", "NYU - Professor Gaëtan Brison"),
+        "🚀"
+    ]
+    layout(*myargs)
+
+
+if __name__ == "__main__":
+    footer2()
