@@ -15,8 +15,14 @@ from PIL import Image
 import altair as alt
 from htbuilder import HtmlElement, div, hr, a, p, img, styles
 from htbuilder.units import percent, px
-import pandas_profiling
-from streamlit_pandas_profiling import st_profile_report
+
+# Replace these:
+# import pandas_profiling
+# from streamlit_pandas_profiling import st_profile_report
+
+# With these:
+from ydata_profiling import ProfileReport
+from streamlit_ydata_profiling import st_profile_report
 
 
 
@@ -194,7 +200,12 @@ if app_mode == 'Introduction':
     st.markdown("### 04 - Complete Report")
     if st.button("Generate Report"):
 
-        pr = df.profile_report()
+        # Replace this:
+        # pr = df.profile_report()
+        
+        # With this:
+        pr = ProfileReport(df, explorative=True)
+        
         st_profile_report(pr)
 
 
