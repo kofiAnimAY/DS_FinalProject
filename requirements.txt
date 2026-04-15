@@ -4,4 +4,6 @@ numpy
 matplotlib
 seaborn
 scikit-learn
-pandas_profiling
+plotly
+htbuilder
+ydata-profiling>=4.0.0,<4.18.1
