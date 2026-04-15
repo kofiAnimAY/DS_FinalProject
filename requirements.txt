@@ -1,5 +1,4 @@
-flask
-numpy
-pandas
-requests
-# Removed htmlmin due to compatibility issues with Python 3.14
+dependency1
+
+
+dependency2
