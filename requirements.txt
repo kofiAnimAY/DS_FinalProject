@@ -4,5 +4,4 @@ numpy
 matplotlib
 seaborn
 scikit-learn
-htbuilder
 pandas_profiling
