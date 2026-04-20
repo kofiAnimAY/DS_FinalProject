@@ -122,7 +122,7 @@ def render():
         df, x=x_feat, y=target, color=color,
         color_continuous_scale="Purples",
         opacity=0.5, title=f"{x_feat} vs {target}",
-        trendline="ols",
+        trendline="lowess",
     )
     fig.update_layout(template="plotly_white", height=500)
     st.plotly_chart(fig, use_container_width=True)

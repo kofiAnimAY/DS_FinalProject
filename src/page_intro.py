@@ -70,11 +70,11 @@ def _correlation_html(df, features, target):
     corr = df[cols].corr()
 
     def _cell_color(v):
+        if pd.isna(v):
+            return "rgba(200, 200, 200, 0.3)"
         if v >= 0:
-            intensity = int(min(abs(v) * 255, 255))
             return f"rgba(87, 6, 140, {abs(v):.2f})"
         else:
-            intensity = int(min(abs(v) * 255, 255))
             return f"rgba(220, 50, 50, {abs(v):.2f})"
 
     header = "".join(

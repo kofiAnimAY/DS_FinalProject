@@ -77,7 +77,7 @@ def get_target(dataset_key: str) -> str:
 
 
 def get_features(df: pd.DataFrame, target: str) -> list[str]:
-    return [c for c in df.columns if c != target]
+    return [c for c in df.select_dtypes(include="number").columns if c != target]
 
 
 def dataset_selector() -> tuple[str, pd.DataFrame, dict]:
