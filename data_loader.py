@@ -6,92 +6,61 @@ Provides cached dataset loading for all pages.
 import streamlit as st
 import pandas as pd
 import numpy as np
-from sklearn.datasets import (
-    fetch_california_housing,
-    load_wine,
-    load_diabetes,
-)
+# from sklearn.datasets import (
+#     fetch_california_housing,
+#     load_wine,
+#     load_diabetes,
+# )
 
 
 # ── Available datasets ──────────────────────────────────────────────
 DATASETS = {
-    "🏠 California Housing": "california",
-    "🍷 Wine Quality": "wine",
-    "🩺 Diabetes Progression": "diabetes",
+    
+    "📧 Marketing Campaign": "marketing",
 }
 
 DATASET_DESCRIPTIONS = {
-    "california": {
-        "title": "California Housing Prices",
+    
+    "marketing": {
+        "title": "Marketing Campaign Response",
         "problem": (
-            "**Business Problem:** A real-estate investment firm needs to predict "
-            "median house values across California districts to identify undervalued "
-            "markets and optimize their acquisition strategy."
+            "**Business Problem:** A retail company wants to predict customer response "
+            "to marketing campaigns based on demographic and behavioral data to optimize "
+            "campaign targeting and increase conversion rates."
         ),
-        "target": "MedHouseVal",
-        "target_desc": "Median house value (in $100k)",
-        "source": "StatLib — 1990 U.S. Census",
-        "rows": "20,640 districts",
+        "target": "Response",
+        "target_desc": "Response to last campaign (1=yes, 0=no)",
+        "source": "Marketing Campaign Dataset",
+        "rows": "2,240 customers",
         "features_desc": {
-            "MedInc": "Median income in the district ($10k)",
-            "HouseAge": "Median house age (years)",
-            "AveRooms": "Average rooms per household",
-            "AveBedrms": "Average bedrooms per household",
-            "Population": "District population",
-            "AveOccup": "Average household members",
-            "Latitude": "District latitude",
-            "Longitude": "District longitude",
-        },
-    },
-    "wine": {
-        "title": "Wine Quality Classification",
-        "problem": (
-            "**Business Problem:** A vineyard cooperative wants to predict wine "
-            "quality scores from chemical properties to optimize their production "
-            "process and reduce costly lab testing."
-        ),
-        "target": "quality",
-        "target_desc": "Wine quality score",
-        "source": "UCI Machine Learning Repository",
-        "rows": "178 samples",
-        "features_desc": {
-            "alcohol": "Alcohol content (%)",
-            "malic_acid": "Malic acid concentration",
-            "ash": "Ash content",
-            "alcalinity_of_ash": "Alkalinity of ash",
-            "magnesium": "Magnesium content",
-            "total_phenols": "Total phenols",
-            "flavanoids": "Flavanoid concentration",
-            "nonflavanoid_phenols": "Non-flavanoid phenols",
-            "proanthocyanins": "Proanthocyanin concentration",
-            "color_intensity": "Color intensity",
-            "hue": "Hue",
-            "od280/od315_of_diluted_wines": "OD280/OD315 ratio",
-            "proline": "Proline content",
-        },
-    },
-    "diabetes": {
-        "title": "Diabetes Disease Progression",
-        "problem": (
-            "**Business Problem:** A healthcare provider wants to predict diabetes "
-            "disease progression one year after baseline to enable early intervention "
-            "and personalized treatment plans, reducing long-term care costs."
-        ),
-        "target": "progression",
-        "target_desc": "Disease progression measure",
-        "source": "Efron et al., 2004 — Annals of Statistics",
-        "rows": "442 patients",
-        "features_desc": {
-            "age": "Age (normalized)",
-            "sex": "Sex (normalized)",
-            "bmi": "Body mass index (normalized)",
-            "bp": "Average blood pressure (normalized)",
-            "s1": "Total serum cholesterol",
-            "s2": "Low-density lipoproteins",
-            "s3": "High-density lipoproteins",
-            "s4": "Total cholesterol / HDL ratio",
-            "s5": "Log of serum triglycerides",
-            "s6": "Blood sugar level",
+            "ID": "Customer ID",
+            "Year_Birth": "Year of birth",
+            "Education": "Education level",
+            "Marital_Status": "Marital status",
+            "Income": "Annual household income",
+            "Kidhome": "Number of children",
+            "Teenhome": "Number of teenagers",
+            "Dt_Customer": "Date became customer",
+            "Recency": "Days since last purchase",
+            "MntWines": "Amount spent on wine",
+            "MntFruits": "Amount spent on fruits",
+            "MntMeatProducts": "Amount spent on meat",
+            "MntFishProducts": "Amount spent on fish",
+            "MntSweetProducts": "Amount spent on sweets",
+            "MntGoldProds": "Amount spent on gold products",
+            "NumDealsPurchases": "Number of purchases with discount",
+            "NumWebPurchases": "Number of web purchases",
+            "NumCatalogPurchases": "Number of catalog purchases",
+            "NumStorePurchases": "Number of store purchases",
+            "NumWebVisitsMonth": "Number of web visits per month",
+            "AcceptedCmp3": "Accepted campaign 3 (1=yes, 0=no)",
+            "AcceptedCmp4": "Accepted campaign 4 (1=yes, 0=no)",
+            "AcceptedCmp5": "Accepted campaign 5 (1=yes, 0=no)",
+            "AcceptedCmp1": "Accepted campaign 1 (1=yes, 0=no)",
+            "AcceptedCmp2": "Accepted campaign 2 (1=yes, 0=no)",
+            "Complain": "Number of complaints",
+            "Z_CostContact": "Cost to contact customer",
+            "Z_Revenue": "Revenue from customer",
         },
     },
 }
@@ -99,20 +68,7 @@ DATASET_DESCRIPTIONS = {
 
 @st.cache_data
 def load_data(dataset_key: str) -> pd.DataFrame:
-    """Load and return a clean DataFrame for the chosen dataset."""
-    if dataset_key == "california":
-        data = fetch_california_housing(as_frame=True)
-        df = data.frame
-    elif dataset_key == "wine":
-        data = load_wine(as_frame=True)
-        df = data.frame
-        df.rename(columns={"target": "quality"}, inplace=True)
-    elif dataset_key == "diabetes":
-        data = load_diabetes(as_frame=True)
-        df = data.frame
-        df.rename(columns={"target": "progression"}, inplace=True)
-    else:
-        raise ValueError(f"Unknown dataset: {dataset_key}")
+    df= pd.read_csv("marketing_campaign.csv", sep='\t')
     return df
 
 
