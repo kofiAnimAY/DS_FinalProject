@@ -23,17 +23,48 @@ DATASET_DESCRIPTIONS = {
     
     "marketing": {
         "title": "Marketing Campaign Response",
-        "problem": (
-            "**Business Problem:** A retail company wants to predict customer response "
-            "to marketing campaigns based on demographic and behavioral data to optimize "
-            "campaign targeting and increase conversion rates."
-        ),
+        "problem": """
+<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;line-height:1.7;color:#fff;">
+
+<h3 style="color:#57068C;margin-top:0;">🎯 Business Case: Predicting Customer Response to Marketing Campaigns</h3>
+
+<h4 style="color:#fff;margin-bottom:4px;">The Problem</h4>
+<p>Retail and <abbr title="Consumer Packaged Goods (CPG): everyday items that consumers use regularly and often replenish — e.g. food &amp; beverages, cosmetics, and cleaning products (Investopedia)" style="text-decoration:underline dotted;cursor:help;">CPG</abbr> companies waste enormous sums blasting promotions to customers who will never convert.
+The dataset (<code>marketing_campaign.csv</code>, 2,240 customers × 29 features) captures demographics,
+household composition, 2-year spend across 6 product categories, channel behavior (web/catalog/store),
+and outcomes of 5 past campaigns plus a final <strong>Response</strong> campaign.</p>
+
+<h4 style="color:#fff;margin-bottom:4px;">Why It Matters</h4>
+<ul style="padding-left:20px;">
+  <li><strong>Marketing waste is massive.</strong> Average direct-mail response rates sit around 2–5%
+  (<a href="https://www.mailpro.org/post/direct-mail-response-rates/" target="_blank">Mailpro</a> /
+  <a href="https://www.ana.net/miccontent/show/id/rr-2025-07-response-rate-report" target="_blank">ANA benchmarks</a>),
+  meaning 95%+ of spend reaches non-buyers.</li>
+
+  <li><strong>Customer acquisition cost has risen ~60%</strong> over the last 5 years across retail
+  (<a href="https://www.simplicitydx.com/blogs/customer-acquisition-crisis" target="_blank">SimplicityDX, 2023</a>),
+  making retention and targeted reactivation more profitable than broad acquisition.</li>
+
+  <li><strong>Personalized targeting lifts ROI 5–8×</strong> vs. mass campaigns
+  (<a href="https://www.mckinsey.com/capabilities/growth-marketing-and-sales/our-insights/the-value-of-getting-personalization-right-or-wrong-is-multiplying" target="_blank">McKinsey, "The value of getting personalization right"</a>).</li>
+
+  <li><strong>Pareto reality:</strong> ~80% of revenue typically comes from ~20% of customers — identifying
+  who in that tail will respond is the single highest-leverage marketing decision
+  (<a href="https://www.salesforce.com/ap/blog/80-20-rule/" target="_blank">Salesforce</a>).</li>
+</ul>
+
+<h4 style="color:#fff;margin-bottom:4px;">Business Question</h4>
+<blockquote style="border-left:4px solid #57068C;margin:0;padding:10px 16px;background:#f8f4fc;border-radius:0 8px 8px 0;font-style:italic;color:#57068C;font-weight:600;">
+  Which customers should we target in the next campaign to maximize response rate while minimizing wasted contact cost — and how do we restrategise our approach toward the groups least likely to respond to our current methods?
+</blockquote>
+
+</div>
+""",
         "target": "Response",
         "target_desc": "Response to last campaign (1=yes, 0=no)",
         "source": "Marketing Campaign Dataset",
         "rows": "2,240 customers",
         "features_desc": {
-            "ID": "Customer ID",
             "Year_Birth": "Year of birth",
             "Education": "Education level",
             "Marital_Status": "Marital status",
@@ -42,12 +73,12 @@ DATASET_DESCRIPTIONS = {
             "Teenhome": "Number of teenagers",
             "Dt_Customer": "Date became customer",
             "Recency": "Days since last purchase",
-            "MntWines": "Amount spent on wine",
-            "MntFruits": "Amount spent on fruits",
-            "MntMeatProducts": "Amount spent on meat",
-            "MntFishProducts": "Amount spent on fish",
-            "MntSweetProducts": "Amount spent on sweets",
-            "MntGoldProds": "Amount spent on gold products",
+            "MntWines": "Total $ spent on wine (last 2 years)",
+            "MntFruits": "Total $ spent on fruits (last 2 years)",
+            "MntMeatProducts": "Total $ spent on meat products (last 2 years)",
+            "MntFishProducts": "Total $ spent on fish products (last 2 years)",
+            "MntSweetProducts": "Total $ spent on sweet products (last 2 years)",
+            "MntGoldProds": "Total $ spent on gold/luxury products (last 2 years)",
             "NumDealsPurchases": "Number of purchases with discount",
             "NumWebPurchases": "Number of web purchases",
             "NumCatalogPurchases": "Number of catalog purchases",

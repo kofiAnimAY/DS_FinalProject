@@ -8,6 +8,7 @@ and a rich interactive HTML data exploration report.
 
 import streamlit as st
 import streamlit.components.v1 as components
+
 import pandas as pd
 import numpy as np
 from data_loader import dataset_selector, get_target, get_features
@@ -33,6 +34,34 @@ def _sparkline_svg(values, width=120, height=32, color="#57068C"):
         f'<svg width="{width}" height="{height}" xmlns="http://www.w3.org/2000/svg">'
         f'<polyline points="{poly}" fill="none" stroke="{color}" stroke-width="1.5" '
         f'stroke-linecap="round" stroke-linejoin="round"/></svg>'
+    )
+
+
+# ── Helper: category count bar chart SVG ─────────────────────────
+def _category_bars_svg(values, max_cats=8, width=220, height=60, color="#57068C"):
+    """Return an inline SVG horizontal bar chart of value counts."""
+    counts = values.dropna().value_counts().iloc[:max_cats]
+    if counts.empty:
+        return ""
+    mx = counts.max()
+    bar_h = max(6, (height - (len(counts) - 1) * 3) // len(counts))
+    bars = []
+    for i, (label, cnt) in enumerate(counts.items()):
+        bw = max(2, cnt / mx * (width - 60))
+        y = i * (bar_h + 3)
+        opacity = 0.5 + 0.5 * (cnt / mx)
+        bars.append(
+            f'<rect x="0" y="{y}" width="{bw:.1f}" height="{bar_h}" rx="2" '
+            f'fill="{color}" opacity="{opacity:.2f}"/>'
+            f'<text x="{bw + 4:.1f}" y="{y + bar_h - 2}" font-size="9" fill="#111">{cnt:,}</text>'
+            f'<text x="{width - 2}" y="{y + bar_h - 2}" font-size="9" fill="#111" '
+            f'text-anchor="end">{str(label)[:12]}</text>'
+        )
+    total_h = len(counts) * (bar_h + 3)
+    return (
+        f'<svg width="{width}" height="{total_h}" xmlns="http://www.w3.org/2000/svg">'
+        + "".join(bars)
+        + "</svg>"
     )
 
 
@@ -124,6 +153,8 @@ def _outlier_summary(df, features):
 def _build_data_report(df, features, target, info):
     """Build a complete HTML data exploration report."""
 
+    EXCLUDE = {"ID", "Z_CostContact", "Z_Revenue"}
+
     n_rows, n_cols = df.shape
     mem_kb = df.memory_usage(deep=True).sum() / 1024
     missing_total = df.isnull().sum().sum()
@@ -162,15 +193,21 @@ def _build_data_report(df, features, target, info):
     """
 
     # ── Section 2: Variable details ────────────────────────────────
+    feat_desc = info.get("features_desc", {})
     var_rows = ""
     for col in df.columns:
+        if col in ("ID", "Z_CostContact", "Z_Revenue"):
+            continue
         is_num = pd.api.types.is_numeric_dtype(df[col])
         s = df[col]
         n_miss = s.isnull().sum()
         n_unique = s.nunique()
         miss_bar_pct = n_miss / len(df) * 100
 
-        if is_num:
+        is_binary = is_num and set(s.dropna().unique()).issubset({0, 1})
+        is_small_int = is_num and not is_binary and n_unique <= 4 and s.dropna().apply(lambda x: x == int(x)).all()
+
+        if is_num and not is_binary and not is_small_int:
             dtype_badge = '<span class="dtype-badge dtype-num">Numeric</span>'
             stats_html = (
                 f'<span class="stat-pill">μ = {s.mean():.2f}</span>'
@@ -181,13 +218,19 @@ def _build_data_report(df, features, target, info):
             chart = _histogram_svg(s)
             sparkline = _sparkline_svg(s)
         else:
-            dtype_badge = '<span class="dtype-badge dtype-cat">Categorical</span>'
+            dtype_badge = (
+                '<span class="dtype-badge dtype-num">Binary (0/1)</span>'
+                if is_binary else
+                '<span class="dtype-badge dtype-num">Count (integer)</span>'
+                if is_small_int else
+                '<span class="dtype-badge dtype-cat">Categorical</span>'
+            )
             top = s.mode().iloc[0] if len(s.mode()) > 0 else "—"
             stats_html = (
                 f'<span class="stat-pill">top = {top}</span>'
                 f'<span class="stat-pill">unique = {n_unique}</span>'
             )
-            chart = ""
+            chart = _category_bars_svg(s)
             sparkline = ""
 
         # Missing bar
@@ -202,7 +245,9 @@ def _build_data_report(df, features, target, info):
         )
 
         is_target = col == target
-        target_tag = ' <span style="background:#57068C;color:white;font-size:0.6rem;padding:2px 6px;border-radius:10px;vertical-align:middle;">TARGET</span>' if is_target else ""
+        target_tag = ' <span class="target-tag" style="background:#57068C;color:white;font-size:0.6rem;padding:2px 6px;border-radius:10px;vertical-align:middle;">TARGET</span>' if is_target else ""
+        desc = feat_desc.get(col, "")
+        desc_html = f'<div style="font-size:0.72rem;color:#666;margin-top:4px;font-style:italic;">{desc}</div>' if desc else ""
 
         var_rows += f"""
         <div class="var-row">
@@ -217,7 +262,8 @@ def _build_data_report(df, features, target, info):
             </div>
             <div class="var-body">
                 <div class="var-stats">
-                    <div style="margin-bottom:6px;">{stats_html}</div>
+                    {desc_html}
+                    <div style="margin-bottom:6px;margin-top:6px;">{stats_html}</div>
                     <div style="margin-top:4px;">{miss_bar}</div>
                 </div>
                 <div class="var-chart">
@@ -229,10 +275,10 @@ def _build_data_report(df, features, target, info):
         """
 
     # ── Section 3: Correlation matrix ──────────────────────────────
-    corr_html = _correlation_html(df, features, target)
+    corr_html = _correlation_html(df, [f for f in features if f not in EXCLUDE], target)
 
     # ── Section 4: Outlier analysis ────────────────────────────────
-    outlier_data = _outlier_summary(df, features)
+    outlier_data = _outlier_summary(df, [f for f in features if f not in EXCLUDE])
     outlier_rows = ""
     for feat, n_out, pct in sorted(outlier_data, key=lambda x: -x[2]):
         bar_color = "#2ea043" if pct < 1 else ("#f0ad4e" if pct < 5 else "#d73a49")
@@ -266,6 +312,9 @@ def _build_data_report(df, features, target, info):
     # ── Assemble full report ───────────────────────────────────────
     report_html = f"""
     <style>
+        .target-tag {{
+            color: white !important;
+        }}
         .data-report {{
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             color: #333;
@@ -444,6 +493,7 @@ def _build_data_report(df, features, target, info):
         <!-- Variable Explorer -->
         <div class="report-section">
             <div class="report-section-title">🔬 Variable Explorer</div>
+            <p style="font-size:0.75rem;color:#888;margin-bottom:10px;">μ = mean (average value) &nbsp;·&nbsp; σ = standard deviation — how far values in a dataset typically deviate from the mean</p>
             {var_rows}
         </div>
 
@@ -492,7 +542,7 @@ def render():
 
     # ── Business problem ────────────────────────────────────────────
     st.markdown("## 🎯 Business Problem")
-    st.markdown(info["problem"])
+    st.markdown(info["problem"], unsafe_allow_html=True)
     st.markdown("---")
 
     # ── Key metrics ─────────────────────────────────────────────────
@@ -516,30 +566,17 @@ def render():
     # ── Data preview ────────────────────────────────────────────────
     tab_head, tab_tail, tab_sample = st.tabs(["First rows", "Last rows", "Random sample"])
     with tab_head:
-        st.dataframe(df.head(10), use_container_width=True)
+        st.dataframe(df.head(10), width='stretch')
     with tab_tail:
-        st.dataframe(df.tail(10), use_container_width=True)
+        st.dataframe(df.tail(10), width='stretch')
     with tab_sample:
-        st.dataframe(df.sample(10, random_state=42), use_container_width=True)
-
-    st.markdown("---")
-
-    # ── Feature dictionary ──────────────────────────────────────────
-    st.markdown("## 📖 Feature Dictionary")
-    feat_df = pd.DataFrame(
-        [
-            {"Feature": k, "Description": v, "Type": str(df[k].dtype)}
-            for k, v in info["features_desc"].items()
-            if k in df.columns
-        ]
-    )
-    st.dataframe(feat_df, use_container_width=True, hide_index=True)
+        st.dataframe(df.sample(10, random_state=42), width='stretch')
 
     st.markdown("---")
 
     # ── Descriptive statistics ──────────────────────────────────────
     st.markdown("## 📊 Descriptive Statistics")
-    st.dataframe(df.describe().T.style.format("{:.2f}"), use_container_width=True)
+    st.dataframe(df.describe().T.style.format("{:.2f}"), width='stretch')
 
     # ── Data quality ────────────────────────────────────────────────
     st.markdown("## ✅ Data Quality Check")
@@ -548,7 +585,7 @@ def render():
         missing = df.isnull().sum()
         miss_pct = (missing / len(df) * 100).round(2)
         quality_df = pd.DataFrame({"Missing": missing, "% Missing": miss_pct})
-        st.dataframe(quality_df, use_container_width=True)
+        st.dataframe(quality_df, width='stretch')
     with col_b:
         completeness = (1 - df.isnull().mean().mean()) * 100
         duplicates = df.duplicated().sum()
@@ -590,6 +627,9 @@ def render():
     color: #333;
     background: white;
   }}
+  /* Force all grey text to black within the report */
+  * {{ color: #111 !important; }}
+  a {{ color: #57068C !important; }}
 </style>
 </head>
 <body>
