@@ -106,7 +106,7 @@ def render():
     )
 
     # ── Train all models ────────────────────────────────────────────
-    if st.button("🚀 Train Models", type="primary", use_container_width=True):
+    if st.button("🚀 Train Models", type="primary", width='stretch'):
         results = []
         predictions = {}
 
@@ -200,9 +200,9 @@ def render():
             "CV R² (mean)": "{:.4f}",
             "CV R² (std)": "{:.4f}",
         })
-        .background_gradient(subset=["R² Score"], cmap="Purples")
-        .background_gradient(subset=["MAE", "RMSE"], cmap="Purples_r"),
-        use_container_width=True,
+        .background_gradient(subset=["R² Score"], cmap="Blues")
+        .background_gradient(subset=["MAE", "RMSE"], cmap="Blues_r"),
+        width='stretch',
     )
 
     st.markdown("---")
@@ -217,11 +217,11 @@ def render():
         sorted_df.reset_index(),
         x="Model", y=metric_choice,
         color=metric_choice,
-        color_continuous_scale="Purples",
+        color_continuous_scale="Blues",
         title=f"{metric_choice} by Model",
     )
     fig.update_layout(template="plotly_white", height=400)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
     st.markdown("---")
 
@@ -235,7 +235,7 @@ def render():
         fig = go.Figure()
         fig.add_trace(go.Scatter(
             x=y_test, y=y_pred, mode="markers",
-            marker=dict(color="#57068C", opacity=0.4, size=5),
+            marker=dict(color="#4338CA", opacity=0.4, size=5),
             name="Predictions",
         ))
         # Perfect prediction line
@@ -251,14 +251,14 @@ def render():
             xaxis_title="Actual", yaxis_title="Predicted",
             title=f"{model_to_plot} — Actual vs Predicted",
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
     with col_p2:
         residuals = y_test - y_pred
         fig = px.histogram(
-            x=residuals, nbins=50, color_discrete_sequence=["#57068C"],
+            x=residuals, nbins=50, color_discrete_sequence=["#4338CA"],
             title=f"{model_to_plot} — Residual Distribution",
             labels={"x": "Residual (Actual − Predicted)", "count": "Count"},
         )
         fig.update_layout(template="plotly_white", height=450)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')

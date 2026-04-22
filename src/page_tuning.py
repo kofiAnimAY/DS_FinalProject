@@ -103,7 +103,7 @@ def render():
     space_df = pd.DataFrame(
         [{"Parameter": k, "Range": v} for k, v in search_spaces[model_name].items()]
     )
-    st.dataframe(space_df, use_container_width=True, hide_index=True)
+    st.dataframe(space_df, width='stretch', hide_index=True)
 
     # ── W&B toggle ──────────────────────────────────────────────────
     track_wandb = st.checkbox(
@@ -114,7 +114,7 @@ def render():
     )
 
     # ── Run optimization ────────────────────────────────────────────
-    if st.button("🚀 Start Optimization", type="primary", use_container_width=True):
+    if st.button("🚀 Start Optimization", type="primary", width='stretch'):
         try:
             import optuna
             optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -339,24 +339,24 @@ def render():
         fig.add_trace(go.Scatter(
             x=trials_df["Trial"], y=trials_df["R² (CV)"],
             mode="markers", name="Trial score",
-            marker=dict(color="#b347ff", size=6, opacity=0.5),
+            marker=dict(color="#A5B4FC", size=6, opacity=0.5),
         ))
         fig.add_trace(go.Scatter(
             x=trials_df["Trial"], y=best_so_far,
             mode="lines", name="Best so far",
-            line=dict(color="#57068C", width=3),
+            line=dict(color="#4338CA", width=3),
         ))
         fig.update_layout(
             template="plotly_white", height=400,
             title="Optimization Progress",
             xaxis_title="Trial", yaxis_title="R² (CV)",
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
     with col_h2:
         fig = px.scatter(
             x=y_test, y=y_pred, opacity=0.4,
-            color_discrete_sequence=["#57068C"],
+            color_discrete_sequence=["#4338CA"],
             title=f"Best {tuned_model} — Actual vs Predicted",
             labels={"x": "Actual", "y": "Predicted"},
         )
@@ -368,7 +368,7 @@ def render():
             showlegend=False,
         ))
         fig.update_layout(template="plotly_white", height=400)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
     st.markdown("---")
 
@@ -382,7 +382,7 @@ def render():
         fig = go.Figure(go.Parcoords(
             line=dict(
                 color=trials_df["R² (CV)"],
-                colorscale="Purples",
+                colorscale="Blues",
                 showscale=True,
                 cmin=trials_df["R² (CV)"].min(),
                 cmax=trials_df["R² (CV)"].max(),
@@ -390,7 +390,7 @@ def render():
             dimensions=dims,
         ))
         fig.update_layout(height=500, title="Parallel Coordinates — All Trials")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
     # ── Experiment log ──────────────────────────────────────────────
     st.markdown("### 📋 Full Experiment Log")
@@ -398,6 +398,6 @@ def render():
         trials_df.sort_values("R² (CV)", ascending=False).style.format(
             {c: "{:.4f}" for c in trials_df.select_dtypes(include="float").columns}
         ),
-        use_container_width=True,
+        width='stretch',
         height=400,
     )

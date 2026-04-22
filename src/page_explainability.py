@@ -131,7 +131,7 @@ def render() -> None:
             "No precomputed cache available. "
             "Click below to train the model and compute importances live."
         )
-        if st.button("🔬 Compute Feature Importance Now", type="primary", use_container_width=True):
+        if st.button("🔬 Compute Feature Importance Now", type="primary", width='stretch'):
             with st.spinner("Training model and computing importances — this may take a moment..."):
                 payload = compute_live(ds_key, model_name, df, target, features)
             st.session_state[cache_key] = payload
@@ -159,10 +159,10 @@ def _render_importance(payload: dict, model_name: str, features: list[str]) -> N
         )
         fig = px.bar(
             imp_df, x="Importance", y="Feature", orientation="h",
-            color="Importance", color_continuous_scale="Purples",
+            color="Importance", color_continuous_scale="Blues",
         )
         fig.update_layout(template="plotly_white", height=max(400, len(features) * 30))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
         st.markdown("**Top 3 driving features:**")
         for _, row in imp_df.tail(3).iloc[::-1].iterrows():
@@ -178,7 +178,7 @@ def _render_importance(payload: dict, model_name: str, features: list[str]) -> N
         fig.add_trace(go.Bar(
             y=perm_df["Feature"], x=perm_df["Importance"],
             orientation="h",
-            marker_color="#57068C",
+            marker_color="#4338CA",
             error_x=dict(type="data", array=perm_df["Std"]),
         ))
         fig.update_layout(
@@ -186,7 +186,7 @@ def _render_importance(payload: dict, model_name: str, features: list[str]) -> N
             xaxis_title="Mean importance decrease",
             height=max(400, len(features) * 30),
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
     if has_shap:
         with tabs[2]:
@@ -202,11 +202,11 @@ def _render_importance(payload: dict, model_name: str, features: list[str]) -> N
 
             fig = px.bar(
                 shap_df, x="Mean |SHAP|", y="Feature", orientation="h",
-                color="Mean |SHAP|", color_continuous_scale="Purples",
+                color="Mean |SHAP|", color_continuous_scale="Blues",
                 title="Mean |SHAP| Value per Feature",
             )
             fig.update_layout(template="plotly_white", height=max(400, len(features) * 30))
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
             st.markdown("#### SHAP Feature Impact (Beeswarm-style)")
             top_n = min(10, len(features))
@@ -230,7 +230,7 @@ def _render_importance(payload: dict, model_name: str, features: list[str]) -> N
                     mode="markers",
                     marker=dict(
                         color=X_test_df[feat].values[sample_idx],
-                        colorscale="Purples",
+                        colorscale="Blues",
                         size=5,
                         opacity=0.55,
                         colorbar=dict(title="Feature value") if feat == top_features[-1] else None,
@@ -244,7 +244,7 @@ def _render_importance(payload: dict, model_name: str, features: list[str]) -> N
                 xaxis_title="SHAP value (impact on prediction)",
                 height=max(400, top_n * 50),
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
     st.markdown("---")
     st.markdown(
