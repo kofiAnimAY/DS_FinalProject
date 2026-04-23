@@ -23,7 +23,7 @@ from sklearn.metrics import (
     r2_score,
     mean_absolute_percentage_error,
 )
-from data_loader import dataset_selector, get_target, get_features
+from data_loader import dataset_selector, get_target, get_features, preprocess
 from src import wandb_tracker
 
 
@@ -45,6 +45,7 @@ MODELS = {
 
 def render():
     ds_key, df, info = dataset_selector()
+    df = preprocess(df)
     target = get_target(ds_key)
     features = get_features(df, target)
 

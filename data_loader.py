@@ -92,6 +92,8 @@ and outcomes of 5 past campaigns plus a final <strong>Response</strong> campaign
             "Complain": "Number of complaints",
             "Z_CostContact": "Cost to contact customer",
             "Z_Revenue": "Revenue from customer",
+            "Age": "Customer age (derived from Year_Birth)",
+            "Tenure_Days": "Days since customer enrollment (derived from Dt_Customer)",
         },
     },
 }
@@ -99,8 +101,49 @@ and outcomes of 5 past campaigns plus a final <strong>Response</strong> campaign
 
 @st.cache_data
 def load_data(dataset_key: str) -> pd.DataFrame:
-    df= pd.read_csv("marketing_campaign.csv", sep='\t')
+    df = pd.read_csv("marketing_campaign.csv", sep="\t")
     return df
+
+
+@st.cache_data
+def preprocess(_df: pd.DataFrame) -> pd.DataFrame:
+    """Return a model-ready DataFrame from the raw marketing campaign data.
+
+    Transformations applied:
+    - Year_Birth → Age
+    - Dt_Customer → Tenure_Days (days since enrollment)
+    - Income: missing values filled with median
+    - Education: ordinal encoded (Basic=0 … PhD=3)
+    - Marital_Status: binary (together=1, alone=0)
+    - Drops ID, Z_CostContact, Z_Revenue
+    """
+    d = _df.copy()
+
+    # Age from birth year
+    d["Age"] = 2025 - d["Year_Birth"]
+    d.drop(columns=["Year_Birth"], inplace=True)
+
+    # Customer tenure in days
+    d["Dt_Customer"] = pd.to_datetime(d["Dt_Customer"], dayfirst=True, errors="coerce")
+    ref_date = d["Dt_Customer"].max()
+    d["Tenure_Days"] = (ref_date - d["Dt_Customer"]).dt.days
+    d.drop(columns=["Dt_Customer"], inplace=True)
+
+    # Fill missing income
+    d["Income"] = d["Income"].fillna(d["Income"].median())
+
+    # Ordinal-encode Education
+    edu_order = {"Basic": 0, "Graduation": 1, "2n Cycle": 1, "Master": 2, "PhD": 3}
+    d["Education"] = d["Education"].map(edu_order).fillna(1).astype(int)
+
+    # Binary-encode Marital_Status (1 = partnered, 0 = single/alone)
+    partnered = {"Married", "Together"}
+    d["Marital_Status"] = d["Marital_Status"].apply(lambda x: 1 if x in partnered else 0)
+
+    # Drop non-informative columns
+    d.drop(columns=["ID", "Z_CostContact", "Z_Revenue"], inplace=True, errors="ignore")
+
+    return d
 
 
 def get_target(dataset_key: str) -> str:

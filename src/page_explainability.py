@@ -22,7 +22,7 @@ import plotly.graph_objects as go
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.inspection import permutation_importance
-from data_loader import dataset_selector, get_target, get_features
+from data_loader import dataset_selector, get_target, get_features, preprocess
 
 CACHE_DIR = Path(__file__).resolve().parent.parent / "cache"
 
@@ -103,6 +103,7 @@ def compute_live(ds_key: str, model_name: str, df: pd.DataFrame, target: str, fe
 
 def render() -> None:
     ds_key, df, info = dataset_selector()
+    df = preprocess(df)
     target = get_target(ds_key)
     features = get_features(df, target)
 
