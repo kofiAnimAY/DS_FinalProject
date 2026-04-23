@@ -23,43 +23,46 @@ DATASET_DESCRIPTIONS = {
     
     "marketing": {
         "title": "Marketing Campaign Response",
-        "problem": """
-<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;line-height:1.7;color:#fff;">
-
-<h3 style="color:#57068C;margin-top:0;">🎯 Business Case: Predicting Customer Response to Marketing Campaigns</h3>
-
-<h4 style="color:#fff;margin-bottom:4px;">The Problem</h4>
-<p>Retail and <abbr title="Consumer Packaged Goods (CPG): everyday items that consumers use regularly and often replenish — e.g. food &amp; beverages, cosmetics, and cleaning products (Investopedia)" style="text-decoration:underline dotted;cursor:help;">CPG</abbr> companies waste enormous sums blasting promotions to customers who will never convert.
-The dataset (<code>marketing_campaign.csv</code>, 2,240 customers × 29 features) captures demographics,
-household composition, 2-year spend across 6 product categories, channel behavior (web/catalog/store),
-and outcomes of 5 past campaigns plus a final <strong>Response</strong> campaign.</p>
-
-<h4 style="color:#fff;margin-bottom:4px;">Why It Matters</h4>
-<ul style="padding-left:20px;">
-  <li><strong>Marketing waste is massive.</strong> Average direct-mail response rates sit around 2–5%
-  (<a href="https://www.mailpro.org/post/direct-mail-response-rates/" target="_blank">Mailpro</a> /
-  <a href="https://www.ana.net/miccontent/show/id/rr-2025-07-response-rate-report" target="_blank">ANA benchmarks</a>),
-  meaning 95%+ of spend reaches non-buyers.</li>
-
-  <li><strong>Customer acquisition cost has risen ~60%</strong> over the last 5 years across retail
-  (<a href="https://www.simplicitydx.com/blogs/customer-acquisition-crisis" target="_blank">SimplicityDX, 2023</a>),
-  making retention and targeted reactivation more profitable than broad acquisition.</li>
-
-  <li><strong>Personalized targeting lifts ROI 5–8×</strong> vs. mass campaigns
-  (<a href="https://www.mckinsey.com/capabilities/growth-marketing-and-sales/our-insights/the-value-of-getting-personalization-right-or-wrong-is-multiplying" target="_blank">McKinsey, "The value of getting personalization right"</a>).</li>
-
-  <li><strong>Pareto reality:</strong> ~80% of revenue typically comes from ~20% of customers — identifying
-  who in that tail will respond is the single highest-leverage marketing decision
-  (<a href="https://www.salesforce.com/ap/blog/80-20-rule/" target="_blank">Salesforce</a>).</li>
-</ul>
-
-<h4 style="color:#fff;margin-bottom:4px;">Business Question</h4>
-<blockquote style="border-left:4px solid #57068C;margin:0;padding:10px 16px;background:#f8f4fc;border-radius:0 8px 8px 0;font-style:italic;color:#57068C;font-weight:600;">
-  Which customers should we target in the next campaign to maximize response rate while minimizing wasted contact cost — and how do we restrategise our approach toward the groups least likely to respond to our current methods?
-</blockquote>
-
-</div>
-""",
+        "problem": (
+"<style>"
+".biz-wrap{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1F2937;line-height:1.6;}"
+".biz-wrap a{color:#4338CA;text-decoration:none;border-bottom:1px dotted #A5B4FC;}"
+".biz-wrap a:hover{border-bottom-color:#4338CA;}"
+".biz-wrap abbr{text-decoration:underline dotted;cursor:help;font-style:normal;}"
+".biz-intro{background:#EEF2FF;border:1px solid #C7D2FE;border-radius:14px;padding:20px 24px;margin-bottom:20px;display:flex;gap:18px;align-items:flex-start;}"
+".biz-intro-icon{font-size:2rem;line-height:1;flex-shrink:0;}"
+".biz-intro h3{margin:0 0 4px 0;color:#312E81;font-size:1.15rem;font-weight:700;}"
+".biz-intro p{margin:0;color:#4B5563;font-size:0.95rem;}"
+".biz-section-label{font-size:0.72rem;text-transform:uppercase;letter-spacing:1.2px;color:#6366F1;font-weight:700;margin:22px 0 8px 0;}"
+".biz-problem-box{background:white;border:1px solid #E5E7EB;border-radius:12px;padding:16px 20px;margin-bottom:18px;}"
+".biz-problem-box p{margin:0;color:#374151;}"
+".stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:18px;}"
+".stat-card{background:white;border:1px solid #E0E7FF;border-left:4px solid #4338CA;border-radius:10px;padding:14px 16px;transition:box-shadow 0.15s,transform 0.15s;}"
+".stat-card:hover{box-shadow:0 6px 16px rgba(67,56,202,0.10);transform:translateY(-2px);}"
+".stat-figure{font-size:1.4rem;font-weight:800;color:#4338CA;line-height:1.1;margin-bottom:2px;}"
+".stat-text{font-size:0.85rem;color:#374151;margin-bottom:6px;}"
+".stat-source{font-size:0.72rem;color:#6B7280;}"
+".biz-question{background:linear-gradient(135deg,#4338CA 0%,#6366F1 100%);color:white;border-radius:12px;padding:20px 24px;margin-top:6px;box-shadow:0 8px 20px rgba(67,56,202,0.18);}"
+".biz-question-label{font-size:0.7rem;text-transform:uppercase;letter-spacing:1.2px;opacity:0.8;margin-bottom:6px;font-weight:700;}"
+".biz-question p{margin:0;font-size:1.02rem;font-style:italic;line-height:1.55;}"
+"</style>"
+'<div class="biz-wrap">'
+'<div class="biz-intro"><div class="biz-intro-icon">🎯</div><div>'
+'<h3>Predicting Customer Response to Marketing Campaigns</h3>'
+'<p>2,240 customers · 29 features · demographics, spend, channel behavior, past campaigns</p>'
+'</div></div>'
+'<div class="biz-section-label">The Problem</div>'
+'<div class="biz-problem-box"><p>Retail and <abbr title="Consumer Packaged Goods: everyday items consumers use regularly and often replenish — food &amp; beverages, cosmetics, cleaning products (Investopedia)">CPG</abbr> companies waste enormous sums blasting promotions to customers who will never convert. The dataset (<code>marketing_campaign.csv</code>) captures demographics, household composition, 2-year spend across 6 product categories, channel behavior (web / catalog / store), and outcomes of 5 past campaigns plus a final <strong>Response</strong> campaign.</p></div>'
+'<div class="biz-section-label">Why It Matters</div>'
+'<div class="stat-grid">'
+'<div class="stat-card"><div class="stat-figure">2–5%</div><div class="stat-text">Average direct-mail response rate — 95%+ of spend reaches non-buyers.</div><div class="stat-source"><a href="https://www.mailpro.org/post/direct-mail-response-rates/" target="_blank">Mailpro</a> · <a href="https://www.ana.net/miccontent/show/id/rr-2025-07-response-rate-report" target="_blank">ANA</a></div></div>'
+'<div class="stat-card"><div class="stat-figure">+60%</div><div class="stat-text">Rise in customer acquisition cost over 5 years across retail — retention beats broad acquisition.</div><div class="stat-source"><a href="https://www.simplicitydx.com/blogs/customer-acquisition-crisis" target="_blank">SimplicityDX, 2023</a></div></div>'
+'<div class="stat-card"><div class="stat-figure">5–8×</div><div class="stat-text">ROI lift from personalized targeting vs. mass campaigns.</div><div class="stat-source"><a href="https://www.mckinsey.com/capabilities/growth-marketing-and-sales/our-insights/the-value-of-getting-personalization-right-or-wrong-is-multiplying" target="_blank">McKinsey</a></div></div>'
+'<div class="stat-card"><div class="stat-figure">80 / 20</div><div class="stat-text">Pareto reality — ~80% of revenue comes from ~20% of customers. Identifying them is the highest-leverage decision.</div><div class="stat-source"><a href="https://www.salesforce.com/ap/blog/80-20-rule/" target="_blank">Salesforce</a></div></div>'
+'</div>'
+'<div class="biz-question"><div class="biz-question-label">💡 Business question</div><p>Which customers should we target in the next campaign to maximize response rate while minimizing wasted contact cost — and how do we restrategise our approach toward the groups least likely to respond to our current methods?</p></div>'
+'</div>'
+        ),
         "target": "Response",
         "target_desc": "Response to last campaign (1=yes, 0=no)",
         "source": "Marketing Campaign Dataset",
@@ -92,8 +95,6 @@ and outcomes of 5 past campaigns plus a final <strong>Response</strong> campaign
             "Complain": "Number of complaints",
             "Z_CostContact": "Cost to contact customer",
             "Z_Revenue": "Revenue from customer",
-            "Age": "Customer age (derived from Year_Birth)",
-            "Tenure_Days": "Days since customer enrollment (derived from Dt_Customer)",
         },
     },
 }
@@ -101,7 +102,7 @@ and outcomes of 5 past campaigns plus a final <strong>Response</strong> campaign
 
 @st.cache_data
 def load_data(dataset_key: str) -> pd.DataFrame:
-    df = pd.read_csv("marketing_campaign.csv", sep="\t")
+    df= pd.read_csv("marketing_campaign.csv", sep='\t')
     return df
 
 
@@ -152,6 +153,34 @@ def get_target(dataset_key: str) -> str:
 
 def get_features(df: pd.DataFrame, target: str) -> list[str]:
     return [c for c in df.select_dtypes(include="number").columns if c != target]
+
+
+def categorical_chart_kind(s: pd.Series, max_unique_int: int = 5) -> str:
+    """Classify a variable by its best visualization kind:
+    - 'pie' for binary (2 levels) — best for yes/no proportions
+    - 'bar' for small-count integers and text categoricals — preserves ordering
+    - 'continuous' for true numeric variables — histogram / box / violin
+    """
+    if not pd.api.types.is_numeric_dtype(s):
+        return "bar"
+    vals = s.dropna().unique()
+    if len(vals) == 2:
+        return "pie"
+    if len(vals) <= max_unique_int:
+        try:
+            if all(float(v).is_integer() for v in vals):
+                return "bar"
+        except (TypeError, ValueError):
+            pass
+    return "continuous"
+
+
+def categorical_labels(values):
+    """Produce friendly labels: 0/1 binary → 'No (0)' / 'Yes (1)', else str(v)."""
+    vals = list(values)
+    if set(vals) == {0, 1}:
+        return ["No (0)" if v == 0 else "Yes (1)" for v in vals]
+    return [str(v) for v in vals]
 
 
 def dataset_selector() -> tuple[str, pd.DataFrame, dict]:

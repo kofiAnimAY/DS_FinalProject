@@ -11,7 +11,13 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from data_loader import dataset_selector, get_target, get_features
+from data_loader import (
+    dataset_selector, get_target, get_features,
+    categorical_chart_kind, categorical_labels,
+)
+
+
+INDIGO_DISCRETE = ["#4338CA", "#6366F1", "#A5B4FC", "#C7D2FE", "#312E81", "#818CF8"]
 
 
 def render():
@@ -25,57 +31,183 @@ def render():
 
     # ── 1. Target distribution ──────────────────────────────────────
     st.markdown("### 🎯 Target Variable Distribution")
+    target_s = df[target].dropna()
+    target_kind = categorical_chart_kind(target_s)
     col1, col2 = st.columns([2, 1])
     with col1:
-        fig = px.histogram(
-            df, x=target, nbins=50, color_discrete_sequence=["#57068C"],
-            title=f"Distribution of {target}",
-        )
-        fig.update_layout(
-            template="plotly_white",
-            xaxis_title=info["target_desc"],
-            yaxis_title="Count",
-        )
-        st.plotly_chart(fig, use_container_width=True)
+        if target_kind == "pie":
+            counts = target_s.value_counts().sort_index()
+            labels = categorical_labels(counts.index)
+            fig = px.pie(
+                names=labels, values=counts.values,
+                color_discrete_sequence=INDIGO_DISCRETE,
+                title=f"Class balance for {target}",
+                hole=0.45,
+            )
+            fig.update_traces(
+                textposition="inside", textinfo="percent+label",
+                sort=False, textfont_size=16,
+            )
+            fig.update_layout(
+                template="plotly_white", height=560,
+                margin=dict(l=10, r=10, t=60, b=10),
+            )
+        elif target_kind == "bar":
+            counts = target_s.value_counts().sort_index()
+            fig = px.bar(
+                x=[str(v) for v in counts.index], y=counts.values,
+                color_discrete_sequence=["#4338CA"],
+                title=f"Counts of {target}",
+            )
+            fig.update_layout(
+                template="plotly_white", showlegend=False, height=380,
+                xaxis_title=info["target_desc"], yaxis_title="Count",
+            )
+        else:
+            fig = px.histogram(
+                df, x=target, nbins=50, color_discrete_sequence=["#4338CA"],
+                title=f"Distribution of {target}",
+            )
+            fig.update_layout(
+                template="plotly_white",
+                xaxis_title=info["target_desc"],
+                yaxis_title="Count",
+            )
+        st.plotly_chart(fig, width='stretch')
     with col2:
         st.markdown("")
         st.markdown("")
-        stats = df[target].describe()
-        for stat_name in ["mean", "std", "min", "25%", "50%", "75%", "max"]:
-            st.markdown(f"""
-            <div class="metric-card">
-                <h3>{stat_name.upper()}</h3>
-                <p>{stats[stat_name]:.2f}</p>
-            </div>""", unsafe_allow_html=True)
+        if target_kind in ("pie", "bar"):
+            counts = target_s.value_counts().sort_index()
+            top = counts.idxmax()
+            top_label = categorical_labels([top])[0]
+            card_items = [
+                ("Rows", f"{len(target_s):,}"),
+                ("Levels", f"{int(target_s.nunique())}"),
+                ("Most Common", top_label),
+                ("Top Share", f"{counts.max() / counts.sum() * 100:.1f}%"),
+            ]
+            if target_kind == "pie" and set(target_s.unique()) == {0, 1}:
+                card_items.insert(3, ("Positive Rate", f"{target_s.mean() * 100:.1f}%"))
+            for label, value in card_items:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <h3>{label}</h3>
+                    <p>{value}</p>
+                </div>""", unsafe_allow_html=True)
+        else:
+            stats = target_s.describe()
+            for stat_name in ["mean", "std", "min", "25%", "50%", "75%", "max"]:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <h3>{stat_name.upper()}</h3>
+                    <p>{stats[stat_name]:.2f}</p>
+                </div>""", unsafe_allow_html=True)
 
     st.markdown("---")
 
     # ── 2. Feature distributions ────────────────────────────────────
     st.markdown("### 📈 Feature Distributions")
-    selected_features = st.multiselect(
-        "Select features to visualize",
-        features,
-        default=features[:4],
-    )
 
-    if selected_features:
-        n_cols = min(len(selected_features), 3)
-        n_rows = (len(selected_features) + n_cols - 1) // n_cols
-        fig = make_subplots(rows=n_rows, cols=n_cols, subplot_titles=selected_features)
+    feature_kinds = {f: categorical_chart_kind(df[f]) for f in features}
+    continuous_feats = [f for f, k in feature_kinds.items() if k == "continuous"]
+    bar_feats = [f for f, k in feature_kinds.items() if k == "bar"]
+    pie_feats = [f for f, k in feature_kinds.items() if k == "pie"]
 
-        colors = px.colors.sequential.Purples_r
-        for i, feat in enumerate(selected_features):
-            r, c = divmod(i, n_cols)
-            fig.add_trace(
-                go.Histogram(
-                    x=df[feat], name=feat, nbinsx=30,
-                    marker_color=colors[i % len(colors)],
-                    showlegend=False,
-                ),
-                row=r + 1, col=c + 1,
+    dist_tab_cont, dist_tab_bar, dist_tab_pie = st.tabs([
+        f"📊 Continuous ({len(continuous_feats)})",
+        f"📶 Small-count / ordinal ({len(bar_feats)})",
+        f"🥧 Binary flags ({len(pie_feats)})",
+    ])
+
+    with dist_tab_cont:
+        if continuous_feats:
+            selected_features = st.multiselect(
+                "Select continuous features",
+                continuous_feats,
+                default=continuous_feats[:4],
+                key="dist_continuous",
             )
-        fig.update_layout(height=300 * n_rows, template="plotly_white")
-        st.plotly_chart(fig, use_container_width=True)
+            if selected_features:
+                n_cols = min(len(selected_features), 3)
+                n_rows = (len(selected_features) + n_cols - 1) // n_cols
+                fig = make_subplots(rows=n_rows, cols=n_cols, subplot_titles=selected_features)
+                colors = px.colors.sequential.Blues_r
+                for i, feat in enumerate(selected_features):
+                    r, c = divmod(i, n_cols)
+                    fig.add_trace(
+                        go.Histogram(
+                            x=df[feat], name=feat, nbinsx=30,
+                            marker_color=colors[i % len(colors)],
+                            showlegend=False,
+                        ),
+                        row=r + 1, col=c + 1,
+                    )
+                fig.update_layout(height=300 * n_rows, template="plotly_white")
+                st.plotly_chart(fig, width='stretch')
+        else:
+            st.info("No continuous features in this dataset.")
+
+    with dist_tab_bar:
+        if bar_feats:
+            selected_bars = st.multiselect(
+                "Select count / ordinal features",
+                bar_feats,
+                default=bar_feats[: min(4, len(bar_feats))],
+                key="dist_bars",
+            )
+            if selected_bars:
+                n_cols = min(len(selected_bars), 3)
+                n_rows = (len(selected_bars) + n_cols - 1) // n_cols
+                fig = make_subplots(rows=n_rows, cols=n_cols, subplot_titles=selected_bars)
+                for i, feat in enumerate(selected_bars):
+                    r, c = divmod(i, n_cols)
+                    counts = df[feat].dropna().value_counts().sort_index()
+                    fig.add_trace(
+                        go.Bar(
+                            x=[str(v) for v in counts.index], y=counts.values,
+                            marker_color="#4338CA", showlegend=False, name=feat,
+                        ),
+                        row=r + 1, col=c + 1,
+                    )
+                fig.update_layout(height=300 * n_rows, template="plotly_white")
+                st.plotly_chart(fig, width='stretch')
+        else:
+            st.info("No small-count or ordinal features in this dataset.")
+
+    with dist_tab_pie:
+        if pie_feats:
+            selected_pies = st.multiselect(
+                "Select binary features",
+                pie_feats,
+                default=pie_feats[: min(4, len(pie_feats))],
+                key="dist_pies",
+            )
+            if selected_pies:
+                n_cols = min(len(selected_pies), 3)
+                n_rows = (len(selected_pies) + n_cols - 1) // n_cols
+                specs = [[{"type": "pie"} for _ in range(n_cols)] for _ in range(n_rows)]
+                fig = make_subplots(
+                    rows=n_rows, cols=n_cols,
+                    specs=specs, subplot_titles=selected_pies,
+                )
+                for i, feat in enumerate(selected_pies):
+                    r, c = divmod(i, n_cols)
+                    counts = df[feat].dropna().value_counts().sort_index()
+                    labels = categorical_labels(counts.index)
+                    fig.add_trace(
+                        go.Pie(
+                            labels=labels, values=counts.values,
+                            hole=0.45, sort=False,
+                            marker=dict(colors=INDIGO_DISCRETE),
+                            textinfo="percent+label",
+                        ),
+                        row=r + 1, col=c + 1,
+                    )
+                fig.update_layout(height=320 * n_rows, template="plotly_white", showlegend=False)
+                st.plotly_chart(fig, width='stretch')
+        else:
+            st.info("No binary features in this dataset.")
 
     st.markdown("---")
 
@@ -85,12 +217,12 @@ def render():
     fig = px.imshow(
         corr,
         text_auto=".2f",
-        color_continuous_scale="RdPu",
+        color_continuous_scale="RdBu_r",
         aspect="auto",
         title="Pearson Correlation Matrix",
     )
     fig.update_layout(height=600, template="plotly_white")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
     # ── Top correlations with target ────────────────────────────────
     target_corr = corr[target].drop(target).abs().sort_values(ascending=False)
@@ -101,7 +233,7 @@ def render():
         st.markdown(
             f"- **{feat}** → {direction}{val:.3f} "
             f'<span style="display:inline-block;height:10px;width:{bar_width}px;'
-            f'background:#57068C;border-radius:4px;"></span>',
+            f'background:#4338CA;border-radius:4px;"></span>',
             unsafe_allow_html=True,
         )
 
@@ -120,91 +252,33 @@ def render():
     color = color_feat if color_feat != "None" else None
     fig = px.scatter(
         df, x=x_feat, y=target, color=color,
-        color_continuous_scale="Purples",
+        color_continuous_scale="Blues",
         opacity=0.5, title=f"{x_feat} vs {target}",
-        trendline="lowess",
     )
     fig.update_layout(template="plotly_white", height=500)
-    st.plotly_chart(fig, use_container_width=True)
+    # Force integer ticks when either axis is an integer-valued variable
+    # (e.g. Kidhome, Teenhome, AcceptedCmp, Complain, Response)
+    if categorical_chart_kind(df[x_feat]) in ("pie", "bar"):
+        fig.update_xaxes(tickmode="linear", tick0=0, dtick=1, tickformat="d")
+    if categorical_chart_kind(df[target]) in ("pie", "bar"):
+        fig.update_yaxes(tickmode="linear", tick0=0, dtick=1, tickformat="d")
+    st.plotly_chart(fig, width='stretch')
 
     st.markdown("---")
 
-    # ── 5. Geographic map ───────────────────────────────────────────
-    lat_col = next((c for c in df.columns if c.lower() in ("latitude", "lat")), None)
-    lon_col = next((c for c in df.columns if c.lower() in ("longitude", "lon", "lng")), None)
-
-    if lat_col and lon_col:
-        st.markdown("### 🗺️ Geographic Map")
-        st.caption("Each point is a district coloured by the selected variable.")
-
-        map_col1, map_col2 = st.columns([1, 1])
-        with map_col1:
-            map_color = st.selectbox(
-                "Colour points by",
-                [target] + features,
-                index=0,
-                key="map_color",
-            )
-        with map_col2:
-            map_size = st.selectbox(
-                "Size points by",
-                ["Uniform"] + [target] + features,
-                index=0,
-                key="map_size",
-            )
-
-        map_df = df.copy()
-        size_col = None
-        if map_size != "Uniform":
-            size_col = map_size
-            # Normalise to a nice visual range
-            s = map_df[size_col]
-            map_df["_size"] = ((s - s.min()) / (s.max() - s.min()) * 12 + 2)
-            size_arg = "_size"
-        else:
-            map_df["_size"] = 4
-            size_arg = "_size"
-
-        fig = px.scatter_map(
-            map_df,
-            lat=lat_col,
-            lon=lon_col,
-            color=map_color,
-            size=size_arg,
-            color_continuous_scale="Purples",
-            opacity=0.65,
-            zoom=4.5,
-            center={"lat": map_df[lat_col].mean(), "lon": map_df[lon_col].mean()},
-            map_style="carto-positron",
-            hover_data={
-                lat_col: ":.2f",
-                lon_col: ":.2f",
-                map_color: ":.2f",
-                "_size": False,
-            },
-            title=f"Map of {info['title']} — coloured by {map_color}",
-        )
-        fig.update_layout(
-            height=620,
-            template="plotly_white",
-            margin=dict(l=0, r=0, t=40, b=0),
-        )
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.markdown("### 🗺️ Geographic Map")
-        st.info(
-            "This dataset does not contain geographic coordinates (latitude / longitude). "
-            "Switch to **California Housing** to explore the map view."
-        )
-
-    st.markdown("---")
-
-    # ── 6. Box plots ────────────────────────────────────────────────
+    # ── 5. Box plots ────────────────────────────────────────────────
     st.markdown("### 📦 Box Plots — Outlier Detection")
-    box_feats = st.multiselect("Features for box plots", features, default=features[:3], key="box")
-    if box_feats:
-        fig = go.Figure()
-        for feat in box_feats:
-            fig.add_trace(go.Box(y=df[feat], name=feat, marker_color="#57068C"))
-        fig.update_layout(template="plotly_white", height=450, showlegend=False)
-        st.plotly_chart(fig, use_container_width=True)
+    st.caption("Box plots only make sense for continuous variables — binary flags and small-count integers are excluded.")
+    if continuous_feats:
+        box_feats = st.multiselect(
+            "Features for box plots", continuous_feats,
+            default=continuous_feats[: min(3, len(continuous_feats))], key="box",
+        )
+        if box_feats:
+            fig = go.Figure()
+            for feat in box_feats:
+                fig.add_trace(go.Box(y=df[feat], name=feat, marker_color="#4338CA"))
+            fig.update_layout(template="plotly_white", height=450, showlegend=False)
+            st.plotly_chart(fig, width='stretch')
+    else:
+        st.info("No continuous features available for box plots.")

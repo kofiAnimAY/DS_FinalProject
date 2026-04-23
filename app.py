@@ -22,19 +22,20 @@ st.set_page_config(
 # ── Custom CSS ──────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    /* NYU purple accent */
+    /* Indigo theme */
     :root {
-        --nyu-purple: #57068C;
-        --nyu-purple-light: #8900E1;
+        --theme-primary: #4338CA;
+        --theme-primary-light: #6366F1;
+        --theme-accent: #06B6D4;
     }
     .stApp > header {background-color: transparent;}
     [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #57068C 0%, #330042 100%);
+        background: linear-gradient(180deg, #4338CA 0%, #1E1B4B 100%);
     }
     [data-testid="stSidebar"] * {color: white !important;}
     [data-testid="stSidebar"] code {
         background: rgba(255,255,255,0.18) !important;
-        color: #ffd966 !important;
+        color: #FDE68A !important;
         padding: 1px 6px;
         border-radius: 4px;
         font-weight: 600;
@@ -42,8 +43,8 @@ st.markdown("""
     [data-testid="stSidebar"] .stSelectbox label,
     [data-testid="stSidebar"] .stMultiSelect label {color: white !important;}
     .metric-card {
-        background: #f8f4fc;
-        border-left: 4px solid #57068C;
+        background: #EEF2FF;
+        border-left: 4px solid #4338CA;
         padding: 1rem 1.2rem;
         border-radius: 8px;
         margin-bottom: 0.5rem;
@@ -53,19 +54,20 @@ st.markdown("""
         justify-content: center;
     }
     .metric-card h3 {margin: 0; font-size: 0.85rem; color: #666;}
-    .metric-card p {margin: 0; font-size: 1.6rem; font-weight: 700; color: #57068C;}
+    .metric-card p {margin: 0; font-size: 1.6rem; font-weight: 700; color: #4338CA;}
     .hero-banner {
-        background: linear-gradient(135deg, #57068C 0%, #8900E1 50%, #b347ff 100%);
+        background: linear-gradient(135deg, #312E81 0%, #4338CA 45%, #6366F1 100%);
         color: white;
         padding: 2.5rem 2rem;
         border-radius: 16px;
         margin-bottom: 1.5rem;
+        box-shadow: 0 10px 30px rgba(67,56,202,0.18);
     }
     .hero-banner h1 {color: white; font-size: 2.2rem; margin-bottom: 0.3rem;}
-    .hero-banner p {color: #e0c8f0; font-size: 1.1rem;}
+    .hero-banner p {color: #C7D2FE; font-size: 1.1rem;}
     div[data-testid="stMetric"] {
-        background: #f8f4fc;
-        border: 1px solid #e0d0f0;
+        background: #EEF2FF;
+        border: 1px solid #C7D2FE;
         border-radius: 10px;
         padding: 12px 16px;
     }

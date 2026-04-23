@@ -3,158 +3,79 @@ Page 1 — Business Case & Data Presentation
 ============================================
 Presents the problem statement, dataset overview,
 descriptive statistics, data quality checks,
-and a rich interactive HTML data exploration report.
+and an interactive data exploration report.
 """
 
 import streamlit as st
-import streamlit.components.v1 as components
 
 import pandas as pd
-import numpy as np
-from data_loader import dataset_selector, get_target, get_features
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+from data_loader import (
+    dataset_selector, get_target, get_features,
+    categorical_chart_kind, categorical_labels,
+)
 
 
-# ── Helper: small sparkline SVG ─────────────────────────────────────
-def _sparkline_svg(values, width=120, height=32, color="#57068C"):
-    """Return an inline SVG sparkline for a numeric series."""
-    vals = pd.to_numeric(values.dropna(), errors="coerce").dropna()
-    if len(vals) < 2:
-        return ""
-    mn, mx = vals.min(), vals.max()
-    rng = mx - mn if mx != mn else 1
-    n = min(len(vals), 80)
-    sampled = vals.iloc[:: max(1, len(vals) // n)]
-    points = []
-    for i, v in enumerate(sampled):
-        x = round(i / (len(sampled) - 1) * width, 2)
-        y = round(height - (v - mn) / rng * (height - 4) - 2, 2)
-        points.append(f"{x},{y}")
-    poly = " ".join(points)
-    return (
-        f'<svg width="{width}" height="{height}" xmlns="http://www.w3.org/2000/svg">'
-        f'<polyline points="{poly}" fill="none" stroke="{color}" stroke-width="1.5" '
-        f'stroke-linecap="round" stroke-linejoin="round"/></svg>'
+INDIGO_DISCRETE = ["#4338CA", "#6366F1", "#A5B4FC", "#C7D2FE", "#312E81", "#818CF8"]
+
+
+def _pie_counts(series: pd.Series, title: str):
+    counts = series.dropna().value_counts().sort_index()
+    labels = categorical_labels(counts.index)
+    fig = px.pie(
+        names=labels, values=counts.values,
+        color_discrete_sequence=INDIGO_DISCRETE,
+        title=title, hole=0.45,
     )
+    fig.update_traces(textposition="inside", textinfo="percent+label", sort=False)
+    fig.update_layout(template="plotly_white", height=380)
+    return fig
 
 
-# ── Helper: category count bar chart SVG ─────────────────────────
-def _category_bars_svg(values, max_cats=8, width=220, height=60, color="#57068C"):
-    """Return an inline SVG horizontal bar chart of value counts."""
-    counts = values.dropna().value_counts().iloc[:max_cats]
-    if counts.empty:
-        return ""
-    mx = counts.max()
-    bar_h = max(6, (height - (len(counts) - 1) * 3) // len(counts))
-    bars = []
-    for i, (label, cnt) in enumerate(counts.items()):
-        bw = max(2, cnt / mx * (width - 60))
-        y = i * (bar_h + 3)
-        opacity = 0.5 + 0.5 * (cnt / mx)
-        bars.append(
-            f'<rect x="0" y="{y}" width="{bw:.1f}" height="{bar_h}" rx="2" '
-            f'fill="{color}" opacity="{opacity:.2f}"/>'
-            f'<text x="{bw + 4:.1f}" y="{y + bar_h - 2}" font-size="9" fill="#111">{cnt:,}</text>'
-            f'<text x="{width - 2}" y="{y + bar_h - 2}" font-size="9" fill="#111" '
-            f'text-anchor="end">{str(label)[:12]}</text>'
-        )
-    total_h = len(counts) * (bar_h + 3)
-    return (
-        f'<svg width="{width}" height="{total_h}" xmlns="http://www.w3.org/2000/svg">'
-        + "".join(bars)
-        + "</svg>"
+def _bar_counts(series: pd.Series, title: str, xlabel: str = None):
+    counts = series.dropna().value_counts().sort_index()
+    labels = [str(v) for v in counts.index]
+    fig = px.bar(
+        x=labels, y=counts.values,
+        color_discrete_sequence=["#4338CA"],
+        title=title,
     )
-
-
-# ── Helper: histogram SVG ──────────────────────────────────────────
-def _histogram_svg(values, bins=20, width=220, height=60, color="#57068C"):
-    """Return an inline SVG histogram bar chart."""
-    vals = pd.to_numeric(values.dropna(), errors="coerce").dropna()
-    if len(vals) < 2:
-        return "<span style='color:#999'>—</span>"
-    counts, edges = np.histogram(vals, bins=bins)
-    mx = counts.max() if counts.max() > 0 else 1
-    bar_w = width / len(counts)
-    bars = []
-    for i, c in enumerate(counts):
-        bh = max(1, c / mx * (height - 4))
-        x = round(i * bar_w, 2)
-        y = round(height - bh, 2)
-        opacity = 0.5 + 0.5 * (c / mx)
-        bars.append(
-            f'<rect x="{x}" y="{y}" width="{round(bar_w - 1, 2)}" '
-            f'height="{round(bh, 2)}" rx="1" fill="{color}" opacity="{opacity:.2f}"/>'
-        )
-    return (
-        f'<svg width="{width}" height="{height}" xmlns="http://www.w3.org/2000/svg">'
-        + "".join(bars)
-        + "</svg>"
+    fig.update_layout(
+        template="plotly_white", showlegend=False, height=380,
+        xaxis_title=xlabel or series.name, yaxis_title="Count",
     )
+    return fig
 
 
-# ── Helper: correlation matrix as HTML table ────────────────────────
-def _correlation_html(df, features, target):
-    """Build a styled HTML correlation matrix with colour-coded cells."""
-    cols = features + [target]
-    cols = [c for c in cols if c in df.columns and pd.api.types.is_numeric_dtype(df[c])]
-    corr = df[cols].corr()
-
-    def _cell_color(v):
-        if pd.isna(v):
-            return "rgba(200, 200, 200, 0.3)"
-        if v >= 0:
-            return f"rgba(87, 6, 140, {abs(v):.2f})"
-        else:
-            return f"rgba(220, 50, 50, {abs(v):.2f})"
-
-    header = "".join(
-        f'<th style="padding:6px 8px;font-size:0.7rem;writing-mode:vertical-lr;'
-        f'transform:rotate(180deg);color:#57068C;font-weight:600;white-space:nowrap;">{c}</th>'
-        for c in corr.columns
-    )
-    rows_html = ""
-    for row_name in corr.index:
-        cells = f'<td style="padding:6px 8px;font-weight:600;font-size:0.75rem;color:#57068C;white-space:nowrap;">{row_name}</td>'
-        for col_name in corr.columns:
-            v = corr.loc[row_name, col_name]
-            bg = _cell_color(v)
-            text_color = "white" if abs(v) > 0.5 else "#333"
-            cells += (
-                f'<td style="padding:4px 6px;background:{bg};color:{text_color};'
-                f'text-align:center;font-size:0.7rem;border-radius:3px;min-width:42px;">'
-                f'{v:.2f}</td>'
-            )
-        rows_html += f"<tr>{cells}</tr>"
-
-    return (
-        '<div style="overflow-x:auto;">'
-        '<table style="border-collapse:separate;border-spacing:2px;">'
-        f"<tr><th></th>{header}</tr>{rows_html}"
-        "</table></div>"
-    )
+EXCLUDE = {"ID"}
 
 
 # ── Helper: outlier detection summary ──────────────────────────────
-def _outlier_summary(df, features):
-    """Return a list of (feature, n_outliers, pct) using IQR method."""
+def _outlier_summary(df, features, method="IQR", z_thresh=3.0, iqr_k=1.5):
+    """Return a list of (feature, n_outliers, pct, lower, upper)."""
     results = []
     for col in features:
         if not pd.api.types.is_numeric_dtype(df[col]):
             continue
-        q1, q3 = df[col].quantile(0.25), df[col].quantile(0.75)
-        iqr = q3 - q1
-        lower, upper = q1 - 1.5 * iqr, q3 + 1.5 * iqr
-        n_out = int(((df[col] < lower) | (df[col] > upper)).sum())
+        s = df[col].dropna()
+        if method == "IQR":
+            q1, q3 = s.quantile(0.25), s.quantile(0.75)
+            iqr = q3 - q1
+            lower, upper = q1 - iqr_k * iqr, q3 + iqr_k * iqr
+        else:  # Z-score
+            mu, sigma = s.mean(), s.std()
+            lower, upper = mu - z_thresh * sigma, mu + z_thresh * sigma
+        mask = (df[col] < lower) | (df[col] > upper)
+        n_out = int(mask.sum())
         pct = n_out / len(df) * 100
-        results.append((col, n_out, pct))
+        results.append((col, n_out, pct, lower, upper))
     return results
 
 
-# ── Main report builder ────────────────────────────────────────────
-def _build_data_report(df, features, target, info):
-    """Build a complete HTML data exploration report."""
-
-    EXCLUDE = {"ID", "Z_CostContact", "Z_Revenue"}
-
+# ── Overview cards (static) ────────────────────────────────────────
+def _overview_cards_html(df):
     n_rows, n_cols = df.shape
     mem_kb = df.memory_usage(deep=True).sum() / 1024
     missing_total = df.isnull().sum().sum()
@@ -162,9 +83,34 @@ def _build_data_report(df, features, target, info):
     duplicates = df.duplicated().sum()
     numeric_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
 
-    # ── Section 1: Overview cards ──────────────────────────────────
-    overview_cards = f"""
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:24px;">
+    return f"""
+    <style>
+        .report-card {{
+            background: #EEF2FF;
+            border: 1px solid #C7D2FE;
+            border-radius: 10px;
+            padding: 14px 16px;
+            text-align: center;
+            transition: transform 0.15s, box-shadow 0.15s;
+        }}
+        .report-card:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(67,56,202,0.12);
+        }}
+        .report-card-label {{
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #888;
+            margin-bottom: 4px;
+        }}
+        .report-card-value {{
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: #4338CA;
+        }}
+    </style>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:8px;">
         <div class="report-card">
             <div class="report-card-label">Observations</div>
             <div class="report-card-value">{n_rows:,}</div>
@@ -192,338 +138,282 @@ def _build_data_report(df, features, target, info):
     </div>
     """
 
-    # ── Section 2: Variable details ────────────────────────────────
-    feat_desc = info.get("features_desc", {})
-    var_rows = ""
-    for col in df.columns:
-        if col in ("ID", "Z_CostContact", "Z_Revenue"):
-            continue
-        is_num = pd.api.types.is_numeric_dtype(df[col])
-        s = df[col]
-        n_miss = s.isnull().sum()
-        n_unique = s.nunique()
-        miss_bar_pct = n_miss / len(df) * 100
 
-        is_binary = is_num and set(s.dropna().unique()).issubset({0, 1})
-        is_small_int = is_num and not is_binary and n_unique <= 4 and s.dropna().apply(lambda x: x == int(x)).all()
+# ── Interactive data exploration report ────────────────────────────
+def _render_data_report(df, features, target, info):
+    """Render an interactive data exploration report."""
 
-        if is_num and not is_binary and not is_small_int:
-            dtype_badge = '<span class="dtype-badge dtype-num">Numeric</span>'
-            stats_html = (
-                f'<span class="stat-pill">μ = {s.mean():.2f}</span>'
-                f'<span class="stat-pill">σ = {s.std():.2f}</span>'
-                f'<span class="stat-pill">min = {s.min():.2f}</span>'
-                f'<span class="stat-pill">max = {s.max():.2f}</span>'
+    # ── Overview ───────────────────────────────────────────────────
+    st.markdown("#### 📋 Overview")
+    st.markdown(_overview_cards_html(df), unsafe_allow_html=True)
+    st.markdown("")
+    st.markdown("---")
+
+    # ── Variable Explorer ──────────────────────────────────────────
+    st.markdown("#### 🔬 Variable Explorer")
+    st.caption("Inspect individual features — chart type is chosen automatically: pie for binary, bar for small-count / text categorical, histogram for continuous.")
+
+    explorable = [c for c in df.columns if c not in EXCLUDE and c != target]
+    vcol1, vcol2, vcol3 = st.columns([2, 1, 1])
+    with vcol1:
+        feat = st.selectbox("Feature", explorable, key="var_explorer_feat")
+    feat_kind = categorical_chart_kind(df[feat])
+    with vcol2:
+        if feat_kind == "continuous":
+            chart_type = st.selectbox(
+                "Chart type", ["Histogram", "Box", "Violin"], key="var_explorer_chart",
             )
-            chart = _histogram_svg(s)
-            sparkline = _sparkline_svg(s)
         else:
-            dtype_badge = (
-                '<span class="dtype-badge dtype-num">Binary (0/1)</span>'
-                if is_binary else
-                '<span class="dtype-badge dtype-num">Count (integer)</span>'
-                if is_small_int else
-                '<span class="dtype-badge dtype-cat">Categorical</span>'
+            chart_type = "Pie" if feat_kind == "pie" else "Bar"
+            st.text_input(
+                "Chart type (auto)", value=chart_type,
+                disabled=True, key="var_explorer_chart_auto",
             )
-            top = s.mode().iloc[0] if len(s.mode()) > 0 else "—"
-            stats_html = (
-                f'<span class="stat-pill">top = {top}</span>'
-                f'<span class="stat-pill">unique = {n_unique}</span>'
-            )
-            chart = _category_bars_svg(s)
-            sparkline = ""
-
-        # Missing bar
-        miss_color = "#2ea043" if n_miss == 0 else "#d73a49"
-        miss_bar = (
-            f'<div style="display:flex;align-items:center;gap:6px;">'
-            f'<div style="flex:1;height:6px;background:#eee;border-radius:3px;overflow:hidden;">'
-            f'<div style="width:{miss_bar_pct:.1f}%;height:100%;background:{miss_color};border-radius:3px;"></div>'
-            f'</div>'
-            f'<span style="font-size:0.7rem;color:#888;">{n_miss} ({miss_bar_pct:.1f}%)</span>'
-            f'</div>'
+    with vcol3:
+        group_by_target = st.checkbox(
+            f"Split by {target}",
+            value=False,
+            key="var_explorer_group",
+            help=f"Split the distribution by the target variable ({target}).",
         )
 
-        is_target = col == target
-        target_tag = ' <span class="target-tag" style="background:#57068C;color:white;font-size:0.6rem;padding:2px 6px;border-radius:10px;vertical-align:middle;">TARGET</span>' if is_target else ""
-        desc = feat_desc.get(col, "")
-        desc_html = f'<div style="font-size:0.72rem;color:#666;margin-top:4px;font-style:italic;">{desc}</div>' if desc else ""
+    # Feature description
+    desc = info.get("features_desc", {}).get(feat, "")
+    if desc:
+        st.markdown(
+            f'<div style="color:#666;font-style:italic;font-size:0.85rem;margin-bottom:8px;">{desc}</div>',
+            unsafe_allow_html=True,
+        )
 
-        var_rows += f"""
-        <div class="var-row">
-            <div class="var-header">
-                <div style="display:flex;align-items:center;gap:8px;">
-                    <span class="var-name">{col}</span>{target_tag}
-                    {dtype_badge}
-                </div>
-                <div style="display:flex;align-items:center;gap:6px;font-size:0.75rem;color:#888;">
-                    <span>{n_unique} unique</span>
-                </div>
+    target_is_binary = set(df[target].dropna().unique()) == {0, 1}
+    color_arg = target if group_by_target else None
+    plot_df = df.copy()
+    if color_arg and target_is_binary:
+        plot_df[target] = plot_df[target].astype(str)
+
+    vchart_col, vstats_col = st.columns([3, 1])
+    with vchart_col:
+        s = df[feat]
+        if chart_type == "Pie":
+            if group_by_target:
+                target_levels = sorted(df[target].dropna().unique())
+                target_labels = categorical_labels(target_levels)
+                specs = [[{"type": "pie"} for _ in target_levels]]
+                fig = make_subplots(
+                    rows=1, cols=len(target_levels),
+                    specs=specs,
+                    subplot_titles=[f"{target} = {lab}" for lab in target_labels],
+                )
+                for i, level in enumerate(target_levels):
+                    sub = df.loc[df[target] == level, feat]
+                    counts = sub.dropna().value_counts().sort_index()
+                    labels = categorical_labels(counts.index)
+                    fig.add_trace(go.Pie(
+                        labels=labels, values=counts.values, hole=0.45,
+                        marker=dict(colors=INDIGO_DISCRETE),
+                        textinfo="percent+label", sort=False,
+                    ), row=1, col=i + 1)
+                fig.update_layout(
+                    template="plotly_white", height=400,
+                    title=f"Distribution of {feat} by {target}",
+                )
+            else:
+                fig = _pie_counts(s, title=f"Distribution of {feat}")
+        elif chart_type == "Bar":
+            if group_by_target:
+                ct = (df.groupby([feat, target]).size()
+                        .rename("count").reset_index())
+                ct[target] = ct[target].astype(str)
+                fig = px.bar(
+                    ct, x=feat, y="count", color=target, barmode="group",
+                    color_discrete_sequence=INDIGO_DISCRETE,
+                    title=f"Counts of {feat} by {target}",
+                )
+                fig.update_xaxes(type="category")
+            else:
+                fig = _bar_counts(s, title=f"Counts of {feat}", xlabel=feat)
+        elif chart_type == "Histogram":
+            bins = st.slider("Bins", 10, 100, 30, key="var_bins")
+            fig = px.histogram(
+                plot_df, x=feat, nbins=bins, color=color_arg,
+                color_discrete_sequence=["#4338CA", "#C7D2FE"],
+                barmode="overlay" if color_arg else "relative",
+                opacity=0.75 if color_arg else 1.0,
+                title=f"Distribution of {feat}",
+            )
+        elif chart_type == "Box":
+            fig = px.box(
+                plot_df, y=feat, color=color_arg, points="outliers",
+                color_discrete_sequence=["#4338CA", "#C7D2FE"],
+                title=f"Box plot of {feat}",
+            )
+        else:  # Violin
+            fig = px.violin(
+                plot_df, y=feat, color=color_arg, box=True, points=False,
+                color_discrete_sequence=["#4338CA", "#C7D2FE"],
+                title=f"Violin plot of {feat}",
+            )
+        fig.update_layout(template="plotly_white", height=fig.layout.height or 400)
+        st.plotly_chart(fig, width='stretch')
+
+    with vstats_col:
+        s = df[feat]
+        n_miss = int(s.isnull().sum())
+        miss_pct = n_miss / len(df) * 100
+        n_unique = int(s.nunique())
+        if feat_kind == "continuous":
+            stat_pairs = [
+                ("μ (mean)", f"{s.mean():.2f}"),
+                ("σ (std)", f"{s.std():.2f}"),
+                ("min", f"{s.min():.2f}"),
+                ("max", f"{s.max():.2f}"),
+                ("unique", f"{n_unique}"),
+                ("missing", f"{n_miss} ({miss_pct:.1f}%)"),
+            ]
+        else:
+            counts = s.dropna().value_counts().sort_values(ascending=False)
+            top_val = counts.index[0] if not counts.empty else "—"
+            top_label = categorical_labels([top_val])[0] if not counts.empty else "—"
+            stat_pairs = [
+                ("levels", f"{n_unique}"),
+                ("most common", str(top_label)),
+                ("top share", f"{counts.iloc[0] / counts.sum() * 100:.1f}%" if not counts.empty else "—"),
+                ("missing", f"{n_miss} ({miss_pct:.1f}%)"),
+            ]
+            if feat_kind == "pie" and set(s.dropna().unique()) == {0, 1}:
+                stat_pairs.insert(2, ("% yes (1)", f"{s.mean() * 100:.1f}%"))
+        for label, value in stat_pairs:
+            st.markdown(f"""
+            <div class="metric-card" style="min-height:52px;padding:0.5rem 1rem;margin-bottom:4px;">
+                <h3 style="font-size:0.72rem;">{label}</h3>
+                <p style="font-size:1rem;">{value}</p>
+            </div>""", unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # ── Correlation Matrix ─────────────────────────────────────────
+    st.markdown("#### 🔗 Correlation Matrix")
+    corr_cols = [c for c in features + [target] if c in df.columns
+                 and pd.api.types.is_numeric_dtype(df[c]) and c not in EXCLUDE]
+
+    ccol1, ccol2 = st.columns([1, 1])
+    with ccol1:
+        corr_method = st.selectbox(
+            "Method", ["pearson", "spearman", "kendall"], index=0, key="corr_method"
+        )
+    with ccol2:
+        min_abs = st.slider(
+            "Hide |corr| below", 0.0, 1.0, 0.0, 0.05, key="corr_thresh",
+            help="Cells with absolute correlation below this threshold are hidden.",
+        )
+
+    corr = df[corr_cols].corr(method=corr_method)
+    display_corr = corr.where(corr.abs() >= min_abs)
+
+    fig = px.imshow(
+        display_corr,
+        text_auto=".2f",
+        color_continuous_scale="RdBu_r",
+        aspect="auto",
+        zmin=-1, zmax=1,
+        title=f"{corr_method.capitalize()} correlation matrix",
+    )
+    fig.update_layout(template="plotly_white", height=max(450, 26 * len(corr_cols)))
+    st.plotly_chart(fig, width='stretch')
+
+    # Top correlations with target
+    if target in corr.columns:
+        target_corr = corr[target].drop(target).dropna().sort_values(
+            key=lambda s: s.abs(), ascending=False
+        )
+        st.markdown(f"**Top features correlated with `{target}`:**")
+        for feat, val in target_corr.head(8).items():
+            direction = "+" if val > 0 else "−"
+            bar_width = int(abs(val) * 100)
+            st.markdown(
+                f"- **{feat}** → {direction}{abs(val):.3f} "
+                f'<span style="display:inline-block;height:10px;width:{bar_width}px;'
+                f'background:#4338CA;border-radius:4px;vertical-align:middle;"></span>',
+                unsafe_allow_html=True,
+            )
+
+    st.markdown("---")
+
+    # ── Outlier Analysis ───────────────────────────────────────────
+    st.markdown("#### ⚠️ Outlier Analysis")
+    ocol1, ocol2 = st.columns([1, 1])
+    with ocol1:
+        method = st.radio(
+            "Detection method", ["IQR", "Z-score"], horizontal=True, key="outlier_method"
+        )
+    with ocol2:
+        if method == "IQR":
+            k = st.slider("IQR multiplier (k)", 1.0, 3.0, 1.5, 0.1, key="iqr_k")
+            z = 3.0
+        else:
+            z = st.slider("Z-score threshold", 2.0, 5.0, 3.0, 0.1, key="z_thresh")
+            k = 1.5
+
+    outlier_feats = [f for f in features if f not in EXCLUDE]
+    outlier_data = _outlier_summary(df, outlier_feats, method=method, z_thresh=z, iqr_k=k)
+    outlier_data.sort(key=lambda x: -x[2])
+
+    if outlier_data:
+        odf = pd.DataFrame(outlier_data, columns=["Feature", "Count", "% of rows", "Lower", "Upper"])
+
+        # Bar chart of outlier percentage per feature
+        bar_fig = px.bar(
+            odf, x="Feature", y="% of rows",
+            color="% of rows", color_continuous_scale="Blues",
+            title=f"Outlier rate per feature ({method})",
+            hover_data={"Count": True, "Lower": ":.2f", "Upper": ":.2f"},
+        )
+        bar_fig.update_layout(
+            template="plotly_white", height=380, xaxis_tickangle=-35,
+            coloraxis_showscale=False,
+        )
+        st.plotly_chart(bar_fig, width='stretch')
+
+        # Feature-level inspection
+        inspect_feat = st.selectbox(
+            "Inspect a feature's outliers",
+            [r[0] for r in outlier_data],
+            key="outlier_inspect",
+        )
+        row = next(r for r in outlier_data if r[0] == inspect_feat)
+        _, n_out, pct, lower, upper = row
+
+        icol1, icol2 = st.columns([2, 1])
+        with icol1:
+            s = df[inspect_feat].dropna()
+            mask = (s < lower) | (s > upper)
+            fig = go.Figure()
+            fig.add_trace(go.Box(
+                y=s, name=inspect_feat, marker_color="#4338CA",
+                boxpoints="outliers", jitter=0.3, pointpos=0,
+            ))
+            fig.add_hline(y=lower, line_dash="dash", line_color="#d73a49",
+                          annotation_text=f"lower={lower:.2f}", annotation_position="right")
+            fig.add_hline(y=upper, line_dash="dash", line_color="#d73a49",
+                          annotation_text=f"upper={upper:.2f}", annotation_position="right")
+            fig.update_layout(
+                template="plotly_white", height=420,
+                title=f"{inspect_feat} — {n_out:,} outliers flagged ({pct:.1f}%)",
+                showlegend=False,
+            )
+            st.plotly_chart(fig, width='stretch')
+        with icol2:
+            severity = "Low" if pct < 1 else ("Medium" if pct < 5 else "High")
+            sev_color = "#2ea043" if pct < 1 else ("#f0ad4e" if pct < 5 else "#d73a49")
+            st.markdown(f"""
+            <div class="metric-card"><h3>Outlier Count</h3><p>{n_out:,}</p></div>
+            <div class="metric-card"><h3>Share of Rows</h3><p>{pct:.1f}%</p></div>
+            <div class="metric-card"><h3>Lower Bound</h3><p style="font-size:1.3rem;">{lower:.2f}</p></div>
+            <div class="metric-card"><h3>Upper Bound</h3><p style="font-size:1.3rem;">{upper:.2f}</p></div>
+            <div class="metric-card" style="border-left-color:{sev_color};">
+                <h3>Severity</h3><p style="color:{sev_color};">{severity}</p>
             </div>
-            <div class="var-body">
-                <div class="var-stats">
-                    {desc_html}
-                    <div style="margin-bottom:6px;margin-top:6px;">{stats_html}</div>
-                    <div style="margin-top:4px;">{miss_bar}</div>
-                </div>
-                <div class="var-chart">
-                    {chart}
-                    <div style="margin-top:4px;">{sparkline}</div>
-                </div>
-            </div>
-        </div>
-        """
-
-    # ── Section 3: Correlation matrix ──────────────────────────────
-    corr_html = _correlation_html(df, [f for f in features if f not in EXCLUDE], target)
-
-    # ── Section 4: Outlier analysis ────────────────────────────────
-    outlier_data = _outlier_summary(df, [f for f in features if f not in EXCLUDE])
-    outlier_rows = ""
-    for feat, n_out, pct in sorted(outlier_data, key=lambda x: -x[2]):
-        bar_color = "#2ea043" if pct < 1 else ("#f0ad4e" if pct < 5 else "#d73a49")
-        severity = "Low" if pct < 1 else ("Medium" if pct < 5 else "High")
-        sev_color = "#2ea043" if pct < 1 else ("#f0ad4e" if pct < 5 else "#d73a49")
-        outlier_rows += f"""
-        <tr>
-            <td style="padding:8px 12px;font-weight:500;font-size:0.8rem;">{feat}</td>
-            <td style="padding:8px 12px;text-align:center;font-size:0.8rem;">{n_out:,}</td>
-            <td style="padding:8px 12px;">
-                <div style="display:flex;align-items:center;gap:6px;">
-                    <div style="flex:1;height:6px;background:#eee;border-radius:3px;overflow:hidden;max-width:100px;">
-                        <div style="width:{min(pct, 100):.1f}%;height:100%;background:{bar_color};border-radius:3px;"></div>
-                    </div>
-                    <span style="font-size:0.75rem;color:#666;">{pct:.1f}%</span>
-                </div>
-            </td>
-            <td style="padding:8px 12px;text-align:center;">
-                <span style="font-size:0.7rem;padding:2px 8px;border-radius:10px;background:{sev_color}22;color:{sev_color};font-weight:600;">{severity}</span>
-            </td>
-        </tr>
-        """
-
-    # ── Section 5: Target distribution stats ───────────────────────
-    target_s = df[target]
-    target_skew = target_s.skew()
-    target_kurt = target_s.kurtosis()
-    target_hist = _histogram_svg(target_s, bins=30, width=300, height=80, color="#8900E1")
-    q1, q2, q3 = target_s.quantile(0.25), target_s.quantile(0.50), target_s.quantile(0.75)
-
-    # ── Assemble full report ───────────────────────────────────────
-    report_html = f"""
-    <style>
-        .target-tag {{
-            color: white !important;
-        }}
-        .data-report {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            color: #333;
-        }}
-        .report-section {{
-            margin-bottom: 28px;
-        }}
-        .report-section-title {{
-            font-size: 1rem;
-            font-weight: 700;
-            color: #57068C;
-            margin-bottom: 12px;
-            padding-bottom: 6px;
-            border-bottom: 2px solid #f0e6f8;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }}
-        .report-card {{
-            background: #f8f4fc;
-            border: 1px solid #e8daf3;
-            border-radius: 10px;
-            padding: 14px 16px;
-            text-align: center;
-            transition: transform 0.15s, box-shadow 0.15s;
-        }}
-        .report-card:hover {{
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(87,6,140,0.12);
-        }}
-        .report-card-label {{
-            font-size: 0.72rem;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            color: #888;
-            margin-bottom: 4px;
-        }}
-        .report-card-value {{
-            font-size: 1.4rem;
-            font-weight: 700;
-            color: #57068C;
-        }}
-        .var-row {{
-            background: #fafafa;
-            border: 1px solid #eee;
-            border-radius: 10px;
-            margin-bottom: 8px;
-            overflow: hidden;
-            transition: box-shadow 0.15s;
-        }}
-        .var-row:hover {{
-            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-        }}
-        .var-header {{
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 10px 16px;
-            background: white;
-            border-bottom: 1px solid #f0f0f0;
-        }}
-        .var-name {{
-            font-weight: 700;
-            font-size: 0.85rem;
-            color: #222;
-        }}
-        .dtype-badge {{
-            font-size: 0.65rem;
-            padding: 2px 8px;
-            border-radius: 10px;
-            font-weight: 600;
-        }}
-        .dtype-num {{
-            background: #e8f4fd;
-            color: #0969da;
-        }}
-        .dtype-cat {{
-            background: #fdf4e8;
-            color: #b35900;
-        }}
-        .var-body {{
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 10px 16px;
-            gap: 16px;
-        }}
-        .var-stats {{
-            flex: 1;
-        }}
-        .var-chart {{
-            flex-shrink: 0;
-            text-align: right;
-        }}
-        .stat-pill {{
-            display: inline-block;
-            font-size: 0.72rem;
-            background: #f0e6f8;
-            color: #57068C;
-            padding: 2px 8px;
-            border-radius: 8px;
-            margin: 2px 3px 2px 0;
-            font-weight: 500;
-        }}
-        .target-box {{
-            background: linear-gradient(135deg, #f8f4fc, #f0e6f8);
-            border: 2px solid #d4b8e8;
-            border-radius: 12px;
-            padding: 20px;
-            text-align: center;
-        }}
-        .target-stat {{
-            display: inline-block;
-            margin: 6px 10px;
-            text-align: center;
-        }}
-        .target-stat-label {{
-            font-size: 0.68rem;
-            color: #888;
-            text-transform: uppercase;
-            letter-spacing: 0.3px;
-        }}
-        .target-stat-value {{
-            font-size: 1.1rem;
-            font-weight: 700;
-            color: #57068C;
-        }}
-    </style>
-
-    <div class="data-report">
-
-        <!-- Overview -->
-        <div class="report-section">
-            <div class="report-section-title">📋 Overview</div>
-            {overview_cards}
-        </div>
-
-        <!-- Target Variable Spotlight -->
-        <div class="report-section">
-            <div class="report-section-title">🎯 Target Variable — <code style="background:#f0e6f8;padding:2px 6px;border-radius:4px;color:#57068C;">{target}</code></div>
-            <div class="target-box">
-                <div style="margin-bottom:12px;">{target_hist}</div>
-                <div>
-                    <div class="target-stat">
-                        <div class="target-stat-label">Mean</div>
-                        <div class="target-stat-value">{target_s.mean():.2f}</div>
-                    </div>
-                    <div class="target-stat">
-                        <div class="target-stat-label">Median</div>
-                        <div class="target-stat-value">{q2:.2f}</div>
-                    </div>
-                    <div class="target-stat">
-                        <div class="target-stat-label">Std</div>
-                        <div class="target-stat-value">{target_s.std():.2f}</div>
-                    </div>
-                    <div class="target-stat">
-                        <div class="target-stat-label">Q1</div>
-                        <div class="target-stat-value">{q1:.2f}</div>
-                    </div>
-                    <div class="target-stat">
-                        <div class="target-stat-label">Q3</div>
-                        <div class="target-stat-value">{q3:.2f}</div>
-                    </div>
-                    <div class="target-stat">
-                        <div class="target-stat-label">Skewness</div>
-                        <div class="target-stat-value">{target_skew:.2f}</div>
-                    </div>
-                    <div class="target-stat">
-                        <div class="target-stat-label">Kurtosis</div>
-                        <div class="target-stat-value">{target_kurt:.2f}</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Variable Explorer -->
-        <div class="report-section">
-            <div class="report-section-title">🔬 Variable Explorer</div>
-            <p style="font-size:0.75rem;color:#888;margin-bottom:10px;">μ = mean (average value) &nbsp;·&nbsp; σ = standard deviation — how far values in a dataset typically deviate from the mean</p>
-            {var_rows}
-        </div>
-
-        <!-- Correlations -->
-        <div class="report-section">
-            <div class="report-section-title">🔗 Correlation Matrix</div>
-            {corr_html}
-        </div>
-
-        <!-- Outlier Analysis -->
-        <div class="report-section">
-            <div class="report-section-title">⚠️ Outlier Analysis <span style="font-size:0.7rem;color:#888;font-weight:400;">(IQR method)</span></div>
-            <table style="width:100%;border-collapse:collapse;">
-                <thead>
-                    <tr style="border-bottom:2px solid #f0e6f8;">
-                        <th style="padding:8px 12px;text-align:left;font-size:0.75rem;color:#888;text-transform:uppercase;">Feature</th>
-                        <th style="padding:8px 12px;text-align:center;font-size:0.75rem;color:#888;text-transform:uppercase;">Count</th>
-                        <th style="padding:8px 12px;text-align:left;font-size:0.75rem;color:#888;text-transform:uppercase;">Percentage</th>
-                        <th style="padding:8px 12px;text-align:center;font-size:0.75rem;color:#888;text-transform:uppercase;">Severity</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {outlier_rows}
-                </tbody>
-            </table>
-        </div>
-
-    </div>
-    """
-    return report_html
+            """, unsafe_allow_html=True)
 
 
 def render():
@@ -606,35 +496,7 @@ def render():
 
     st.markdown("---")
 
-    # ── HTML Data Exploration Report ────────────────────────────────
+    # ── Interactive Data Exploration Report ─────────────────────────
     st.markdown("## 📑 Data Exploration Report")
-    st.caption("Interactive profiling report — distributions, correlations, and outlier analysis.")
-    report_html = _build_data_report(df, features, target, info)
-
-    # Estimate iframe height from content length (rows + features + target + outliers)
-    n_features = len(df.columns)
-    report_height = 900 + n_features * 90 + max(0, n_features - 6) * 40
-
-    full_html = f"""<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<style>
-  body {{
-    margin: 0;
-    padding: 12px;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    color: #333;
-    background: white;
-  }}
-  /* Force all grey text to black within the report */
-  * {{ color: #111 !important; }}
-  a {{ color: #57068C !important; }}
-</style>
-</head>
-<body>
-{report_html}
-</body>
-</html>"""
-
-    components.html(full_html, height=report_height, scrolling=True)
+    st.caption("Interactive profiling — pan, zoom, hover, and pick features to uncover patterns.")
+    _render_data_report(df, features, target, info)
