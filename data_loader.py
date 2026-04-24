@@ -77,14 +77,23 @@ DATASET_DESCRIPTIONS = {
             "Teenhome": "Number of teenagers at home",
             "HasChildren": "Any child or teen at home (1=yes, 0=no)",
             "Recency": "Days since last purchase (lower = more recently active)",
+            "MntWines": "$ spent on wine (last 2 years)",
+            "MntFruits": "$ spent on fruits (last 2 years)",
+            "MntMeatProducts": "$ spent on meat products (last 2 years)",
+            "MntFishProducts": "$ spent on fish products (last 2 years)",
+            "MntSweetProducts": "$ spent on sweet products (last 2 years)",
+            "MntGoldProds": "$ spent on gold/luxury products (last 2 years)",
+            "TotalSpend": "Total $ spent across all 6 categories — aggregate of Mnt* columns",
+            "NumWebPurchases": "Number of web purchases",
+            "NumCatalogPurchases": "Number of catalog purchases",
+            "NumStorePurchases": "Number of store purchases",
+            "TotalPurchases": "Total purchases across all channels — aggregate of Num*Purchases",
             "AcceptedCmp1": "Accepted campaign 1 (1=yes, 0=no) — corr 0.29 with Response",
             "AcceptedCmp2": "Accepted campaign 2 (1=yes, 0=no) — corr 0.17 with Response",
             "AcceptedCmp3": "Accepted campaign 3 (1=yes, 0=no) — corr 0.25 with Response",
             "AcceptedCmp4": "Accepted campaign 4 (1=yes, 0=no) — corr 0.18 with Response",
             "AcceptedCmp5": "Accepted campaign 5 (1=yes, 0=no) — corr 0.33 with Response",
             "TotalAccepted": "Sum of past 5 campaign acceptances — strongest predictor of Response",
-            "TotalSpend": "Total $ spent across all 6 product categories (last 2 years)",
-            "TotalPurchases": "Total purchases across web, catalog, and store channels",
         },
     },
 }
@@ -135,10 +144,8 @@ def preprocess(_df: pd.DataFrame) -> pd.DataFrame:
     d["TotalPurchases"] = d[purchase_cols].sum(axis=1)
     d["TotalAccepted"] = d[campaign_cols].sum(axis=1)
     d["HasChildren"] = ((d["Kidhome"] + d["Teenhome"]) > 0).astype(int)
-
-    # Drop individual spend/purchase columns — replaced by aggregates above,
-    # keeping them causes perfect multicollinearity that breaks linear models
-    d.drop(columns=spend_cols + purchase_cols, inplace=True)
+    # Keep individual columns too — tree models use the granularity;
+    # Ridge/Lasso handle the collinearity through regularization
 
     # Drop zero-correlation features (correlation with Response ≈ 0.00)
     d.drop(columns=["Complain", "NumDealsPurchases", "NumWebVisitsMonth"],
