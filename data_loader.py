@@ -68,33 +68,23 @@ DATASET_DESCRIPTIONS = {
         "source": "Marketing Campaign Dataset",
         "rows": "2,240 customers",
         "features_desc": {
-            "Year_Birth": "Year of birth",
-            "Education": "Education level",
-            "Marital_Status": "Marital status",
-            "Income": "Annual household income",
-            "Kidhome": "Number of children",
-            "Teenhome": "Number of teenagers",
-            "Dt_Customer": "Date became customer",
-            "Recency": "Days since last purchase",
-            "MntWines": "Total $ spent on wine (last 2 years)",
-            "MntFruits": "Total $ spent on fruits (last 2 years)",
-            "MntMeatProducts": "Total $ spent on meat products (last 2 years)",
-            "MntFishProducts": "Total $ spent on fish products (last 2 years)",
-            "MntSweetProducts": "Total $ spent on sweet products (last 2 years)",
-            "MntGoldProds": "Total $ spent on gold/luxury products (last 2 years)",
-            "NumDealsPurchases": "Number of purchases with discount",
-            "NumWebPurchases": "Number of web purchases",
-            "NumCatalogPurchases": "Number of catalog purchases",
-            "NumStorePurchases": "Number of store purchases",
-            "NumWebVisitsMonth": "Number of web visits per month",
-            "AcceptedCmp3": "Accepted campaign 3 (1=yes, 0=no)",
-            "AcceptedCmp4": "Accepted campaign 4 (1=yes, 0=no)",
-            "AcceptedCmp5": "Accepted campaign 5 (1=yes, 0=no)",
-            "AcceptedCmp1": "Accepted campaign 1 (1=yes, 0=no)",
-            "AcceptedCmp2": "Accepted campaign 2 (1=yes, 0=no)",
-            "Complain": "Number of complaints",
-            "Z_CostContact": "Cost to contact customer",
-            "Z_Revenue": "Revenue from customer",
+            "Age": "Customer age (capped at 100 to remove data-entry errors)",
+            "Tenure_Days": "Days since enrollment (derived from Dt_Customer)",
+            "Education": "Education level (ordinal: 0=Basic … 3=PhD)",
+            "Marital_Status": "Partnered=1, single/alone=0",
+            "Income": "Annual household income (outliers capped at 99th pct)",
+            "Kidhome": "Number of children at home",
+            "Teenhome": "Number of teenagers at home",
+            "HasChildren": "Any child or teen at home (1=yes, 0=no)",
+            "Recency": "Days since last purchase (lower = more recently active)",
+            "AcceptedCmp1": "Accepted campaign 1 (1=yes, 0=no) — corr 0.29 with Response",
+            "AcceptedCmp2": "Accepted campaign 2 (1=yes, 0=no) — corr 0.17 with Response",
+            "AcceptedCmp3": "Accepted campaign 3 (1=yes, 0=no) — corr 0.25 with Response",
+            "AcceptedCmp4": "Accepted campaign 4 (1=yes, 0=no) — corr 0.18 with Response",
+            "AcceptedCmp5": "Accepted campaign 5 (1=yes, 0=no) — corr 0.33 with Response",
+            "TotalAccepted": "Sum of past 5 campaign acceptances — strongest predictor of Response",
+            "TotalSpend": "Total $ spent across all 6 product categories (last 2 years)",
+            "TotalPurchases": "Total purchases across web, catalog, and store channels",
         },
     },
 }
@@ -108,20 +98,11 @@ def load_data(dataset_key: str) -> pd.DataFrame:
 
 @st.cache_data
 def preprocess(_df: pd.DataFrame) -> pd.DataFrame:
-    """Return a model-ready DataFrame from the raw marketing campaign data.
-
-    Transformations applied:
-    - Year_Birth → Age
-    - Dt_Customer → Tenure_Days (days since enrollment)
-    - Income: missing values filled with median
-    - Education: ordinal encoded (Basic=0 … PhD=3)
-    - Marital_Status: binary (together=1, alone=0)
-    - Drops ID, Z_CostContact, Z_Revenue
-    """
+    """Return a model-ready DataFrame from the raw marketing campaign data."""
     d = _df.copy()
 
-    # Age from birth year
-    d["Age"] = 2025 - d["Year_Birth"]
+    # Age from birth year — cap at 100 to remove data-entry errors (e.g. born 1893)
+    d["Age"] = (2025 - d["Year_Birth"]).clip(upper=100)
     d.drop(columns=["Year_Birth"], inplace=True)
 
     # Customer tenure in days
@@ -130,8 +111,9 @@ def preprocess(_df: pd.DataFrame) -> pd.DataFrame:
     d["Tenure_Days"] = (ref_date - d["Dt_Customer"]).dt.days
     d.drop(columns=["Dt_Customer"], inplace=True)
 
-    # Fill missing income
+    # Fill missing income then cap extreme outliers at 99th percentile
     d["Income"] = d["Income"].fillna(d["Income"].median())
+    d["Income"] = d["Income"].clip(upper=d["Income"].quantile(0.99))
 
     # Ordinal-encode Education
     edu_order = {"Basic": 0, "Graduation": 1, "2n Cycle": 1, "Master": 2, "PhD": 3}
@@ -140,6 +122,27 @@ def preprocess(_df: pd.DataFrame) -> pd.DataFrame:
     # Binary-encode Marital_Status (1 = partnered, 0 = single/alone)
     partnered = {"Married", "Together"}
     d["Marital_Status"] = d["Marital_Status"].apply(lambda x: 1 if x in partnered else 0)
+
+    # Engineered aggregates — reduces severe multicollinearity (r=0.35–0.72 among components)
+    # and creates the strongest single predictors of Response
+    spend_cols = ["MntWines", "MntFruits", "MntMeatProducts",
+                  "MntFishProducts", "MntSweetProducts", "MntGoldProds"]
+    purchase_cols = ["NumWebPurchases", "NumCatalogPurchases", "NumStorePurchases"]
+    campaign_cols = ["AcceptedCmp1", "AcceptedCmp2", "AcceptedCmp3",
+                     "AcceptedCmp4", "AcceptedCmp5"]
+
+    d["TotalSpend"] = d[spend_cols].sum(axis=1)
+    d["TotalPurchases"] = d[purchase_cols].sum(axis=1)
+    d["TotalAccepted"] = d[campaign_cols].sum(axis=1)
+    d["HasChildren"] = ((d["Kidhome"] + d["Teenhome"]) > 0).astype(int)
+
+    # Drop individual spend/purchase columns — replaced by aggregates above,
+    # keeping them causes perfect multicollinearity that breaks linear models
+    d.drop(columns=spend_cols + purchase_cols, inplace=True)
+
+    # Drop zero-correlation features (correlation with Response ≈ 0.00)
+    d.drop(columns=["Complain", "NumDealsPurchases", "NumWebVisitsMonth"],
+           inplace=True, errors="ignore")
 
     # Drop non-informative columns
     d.drop(columns=["ID", "Z_CostContact", "Z_Revenue"], inplace=True, errors="ignore")

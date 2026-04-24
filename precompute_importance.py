@@ -21,7 +21,7 @@ from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
 from sklearn.inspection import permutation_importance
 from sklearn.model_selection import train_test_split
 
-from data_loader import DATASETS, get_features, get_target, load_data
+from data_loader import DATASETS, get_features, get_target, load_data, preprocess
 
 CACHE_DIR = Path(__file__).parent / "cache"
 CACHE_DIR.mkdir(exist_ok=True)
@@ -38,7 +38,7 @@ def cache_path(dataset_key: str, model_name: str) -> Path:
 
 
 def compute_for(dataset_key: str, model_name: str) -> dict:
-    df = load_data(dataset_key)
+    df = preprocess(load_data(dataset_key))
     target = get_target(dataset_key)
     features = get_features(df, target)
     X = df[features]
