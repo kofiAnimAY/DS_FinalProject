@@ -1,8 +1,9 @@
 """
-Page 4 — Explainability (SHAP)
-================================
-Feature importance analysis using SHAP values, permutation importance,
-and model-specific importances.
+Page 4 — Explainability (SHAP) — Classification
+================================================
+Feature importance analysis for the classification setup.
+Uses Random Forest Classifier and Gradient Boosting Classifier with
+built-in impurity importance, permutation importance, and SHAP values.
 
 Results are loaded from `cache/importance_<dataset>_<model>.pkl` when
 available (precomputed via `python precompute_importance.py`). If the
@@ -20,7 +21,7 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.inspection import permutation_importance
 from data_loader import dataset_selector, get_target, get_features, preprocess
 
@@ -43,24 +44,47 @@ def load_cached(ds_key: str, model_name: str) -> dict | None:
         return None
 
 
-def compute_live(ds_key: str, model_name: str, df: pd.DataFrame, target: str, features: list[str]) -> dict:
-    # Subsample large datasets to keep live compute snappy and crash-free
+def _extract_positive_class_shap(shap_values_raw) -> np.ndarray:
+    """Extract SHAP values for the positive (class=1) output across SHAP versions.
+
+    - Older RandomForestClassifier: returns list [neg_class, pos_class]
+    - Recent SHAP: may return 3D array (n_samples, n_features, n_classes)
+    - GradientBoostingClassifier (binary): returns 2D array of log-odds shifts
+    """
+    if isinstance(shap_values_raw, list):
+        arr = np.asarray(shap_values_raw[-1])
+    else:
+        arr = np.asarray(shap_values_raw)
+    if arr.ndim == 3:
+        # (n, f, k) — take last class (positive)
+        arr = arr[..., -1]
+    return arr
+
+
+def compute_live(ds_key: str, model_name: str, df: pd.DataFrame,
+                 target: str, features: list[str]) -> dict:
+    # Subsample large datasets to keep live compute snappy
     MAX_TRAIN = 5000
     MAX_TEST = 500
 
-    X_full, y_full = df[features], df[target]
+    X_full, y_full = df[features], df[target].astype(int)
     if len(df) > MAX_TRAIN + MAX_TEST:
         X_full = X_full.sample(n=MAX_TRAIN + MAX_TEST, random_state=42)
         y_full = y_full.loc[X_full.index]
 
     X_train, X_test, y_train, y_test = train_test_split(
-        X_full, y_full, test_size=min(MAX_TEST / len(X_full), 0.2), random_state=42
+        X_full, y_full,
+        test_size=min(MAX_TEST / len(X_full), 0.2),
+        random_state=42, stratify=y_full,
     )
 
     if model_name == "Random Forest":
-        model = RandomForestRegressor(n_estimators=50, random_state=42, n_jobs=1)
+        model = RandomForestClassifier(
+            n_estimators=50, random_state=42,
+            class_weight="balanced", n_jobs=1,
+        )
     else:
-        model = GradientBoostingRegressor(n_estimators=50, random_state=42)
+        model = GradientBoostingClassifier(n_estimators=50, random_state=42)
     model.fit(X_train, y_train)
 
     imp_df = pd.DataFrame({
@@ -69,7 +93,8 @@ def compute_live(ds_key: str, model_name: str, df: pd.DataFrame, target: str, fe
     }).sort_values("Importance", ascending=True)
 
     perm = permutation_importance(
-        model, X_test, y_test, n_repeats=5, random_state=42, n_jobs=1
+        model, X_test, y_test, n_repeats=5, random_state=42,
+        n_jobs=1, scoring="roc_auc",
     )
     perm_df = pd.DataFrame({
         "Feature": features,
@@ -87,15 +112,13 @@ def compute_live(ds_key: str, model_name: str, df: pd.DataFrame, target: str, fe
     try:
         import shap
         explainer = shap.TreeExplainer(model)
-        shap_values = explainer.shap_values(X_test)
-        shap_arr = np.asarray(shap_values)
+        shap_arr = _extract_positive_class_shap(explainer.shap_values(X_test))
         payload["shap_values"] = shap_arr
         payload["shap_df"] = pd.DataFrame({
             "Feature": features,
             "Mean |SHAP|": np.abs(shap_arr).mean(axis=0),
         }).sort_values("Mean |SHAP|", ascending=True)
     except Exception as exc:
-        # SHAP may fail on some sklearn versions — skip gracefully
         payload["shap_error"] = str(exc)
 
     return payload
@@ -109,8 +132,9 @@ def render() -> None:
 
     st.markdown("## 🔍 Explainability — Feature Importance")
     st.caption(
-        "Understand which features drive predictions using SHAP values, "
-        "permutation importance, and built-in model importances."
+        "Understand which features drive predictions of **Response = 1** "
+        "using SHAP values, permutation importance (ROC AUC drop), and "
+        "built-in tree importances."
     )
     st.markdown("---")
 
@@ -132,8 +156,12 @@ def render() -> None:
             "No precomputed cache available. "
             "Click below to train the model and compute importances live."
         )
-        if st.button("🔬 Compute Feature Importance Now", type="primary", width='stretch'):
-            with st.spinner("Training model and computing importances — this may take a moment..."):
+        if st.button("🔬 Compute Feature Importance Now",
+                     type="primary", width='stretch'):
+            with st.spinner(
+                "Training classifier and computing importances — "
+                "this may take a moment..."
+            ):
                 payload = compute_live(ds_key, model_name, df, target, features)
             st.session_state[cache_key] = payload
             st.rerun()
@@ -142,7 +170,8 @@ def render() -> None:
     _render_importance(payload, model_name, features)
 
 
-def _render_importance(payload: dict, model_name: str, features: list[str]) -> None:
+def _render_importance(payload: dict, model_name: str,
+                       features: list[str]) -> None:
     imp_df = payload["imp_df"]
     perm_df = payload["perm_df"]
     has_shap = "shap_df" in payload
@@ -156,13 +185,15 @@ def _render_importance(payload: dict, model_name: str, features: list[str]) -> N
         st.markdown(f"#### {model_name} — Built-in Feature Importance")
         st.markdown(
             "Built-in importance measures how much each feature contributes "
-            "to reducing impurity (Gini / MSE) across all trees."
+            "to reducing impurity (Gini) across all trees — a measure of how "
+            "useful a feature is for splitting the data toward pure-class leaves."
         )
         fig = px.bar(
             imp_df, x="Importance", y="Feature", orientation="h",
             color="Importance", color_continuous_scale="Blues",
         )
-        fig.update_layout(template="plotly_white", height=max(400, len(features) * 30))
+        fig.update_layout(template="plotly_white",
+                          height=max(400, len(features) * 30))
         st.plotly_chart(fig, width='stretch')
 
         st.markdown("**Top 3 driving features:**")
@@ -172,8 +203,8 @@ def _render_importance(payload: dict, model_name: str, features: list[str]) -> N
     with tabs[1]:
         st.markdown("#### Permutation Importance")
         st.markdown(
-            "Measures the decrease in model score when a feature's values are "
-            "randomly shuffled — a model-agnostic method."
+            "Measures the drop in **ROC AUC** when a feature's values are randomly "
+            "shuffled — a model-agnostic method. Larger drop = more important."
         )
         fig = go.Figure()
         fig.add_trace(go.Bar(
@@ -184,7 +215,7 @@ def _render_importance(payload: dict, model_name: str, features: list[str]) -> N
         ))
         fig.update_layout(
             template="plotly_white",
-            xaxis_title="Mean importance decrease",
+            xaxis_title="Mean ROC AUC decrease",
             height=max(400, len(features) * 30),
         )
         st.plotly_chart(fig, width='stretch')
@@ -198,22 +229,24 @@ def _render_importance(payload: dict, model_name: str, features: list[str]) -> N
             st.markdown("#### SHAP — SHapley Additive exPlanations")
             st.markdown(
                 "SHAP values decompose each prediction into the contribution "
-                "of each feature, based on cooperative game theory."
+                "of each feature, based on cooperative game theory. Positive "
+                "SHAP values push the prediction **toward Response = 1**; "
+                "negative values push away."
             )
 
             fig = px.bar(
                 shap_df, x="Mean |SHAP|", y="Feature", orientation="h",
                 color="Mean |SHAP|", color_continuous_scale="Blues",
-                title="Mean |SHAP| Value per Feature",
+                title="Mean |SHAP| Value per Feature (Positive Class)",
             )
-            fig.update_layout(template="plotly_white", height=max(400, len(features) * 30))
+            fig.update_layout(template="plotly_white",
+                              height=max(400, len(features) * 30))
             st.plotly_chart(fig, width='stretch')
 
             st.markdown("#### SHAP Feature Impact (Beeswarm-style)")
             top_n = min(10, len(features))
             top_features = shap_df.tail(top_n)["Feature"].tolist()
 
-            # Cap markers per feature for a responsive plot
             MAX_POINTS = 400
             n_samples = len(shap_values)
             if n_samples > MAX_POINTS:
@@ -234,7 +267,8 @@ def _render_importance(payload: dict, model_name: str, features: list[str]) -> N
                         colorscale="Blues",
                         size=5,
                         opacity=0.55,
-                        colorbar=dict(title="Feature value") if feat == top_features[-1] else None,
+                        colorbar=dict(title="Feature value")
+                            if feat == top_features[-1] else None,
                         showscale=(feat == top_features[-1]),
                     ),
                     name=feat,
@@ -242,7 +276,7 @@ def _render_importance(payload: dict, model_name: str, features: list[str]) -> N
                 ))
             fig.update_layout(
                 template="plotly_white",
-                xaxis_title="SHAP value (impact on prediction)",
+                xaxis_title="SHAP value (impact on P(Response = 1))",
                 height=max(400, top_n * 50),
             )
             st.plotly_chart(fig, width='stretch')
@@ -250,5 +284,6 @@ def _render_importance(payload: dict, model_name: str, features: list[str]) -> N
     st.markdown("---")
     st.markdown(
         "💡 **Interpretation:** Features with high importance strongly influence "
-        "predictions. Positive SHAP values push predictions up; negative values push down."
+        "whether a customer is classified as a responder. Positive SHAP values "
+        "increase P(Response=1); negative values decrease it."
     )

@@ -145,7 +145,7 @@ def preprocess(_df: pd.DataFrame) -> pd.DataFrame:
     d["TotalAccepted"] = d[campaign_cols].sum(axis=1)
     d["HasChildren"] = ((d["Kidhome"] + d["Teenhome"]) > 0).astype(int)
     # Keep individual columns too — tree models use the granularity;
-    # Ridge/Lasso handle the collinearity through regularization
+    # Logistic Regression handles the collinearity through L2 regularization
 
     # Drop zero-correlation features (correlation with Response ≈ 0.00)
     d.drop(columns=["Complain", "NumDealsPurchases", "NumWebVisitsMonth"],

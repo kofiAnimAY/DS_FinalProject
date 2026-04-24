@@ -1,8 +1,8 @@
 """
-Page 5 — Hyperparameter Tuning
-================================
-Automated hyperparameter optimization using Optuna,
-with experiment tracking and visualization.
+Page 5 — Hyperparameter Tuning (Classification)
+=================================================
+Automated hyperparameter optimization using Optuna for the 5 classifiers,
+scored by ROC AUC on stratified cross-validation.
 """
 
 import streamlit as st
@@ -12,10 +12,14 @@ import plotly.express as px
 import plotly.graph_objects as go
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.preprocessing import StandardScaler
-from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
-from sklearn.linear_model import Ridge, Lasso, ElasticNet
-from sklearn.neural_network import MLPRegressor
-from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
+from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.neural_network import MLPClassifier
+from sklearn.metrics import (
+    roc_auc_score, average_precision_score, f1_score, accuracy_score,
+    confusion_matrix, roc_curve,
+)
 from data_loader import dataset_selector, get_target, get_features, preprocess
 from src import wandb_tracker
 
@@ -28,16 +32,17 @@ def render():
 
     st.markdown("## ⚙️ Hyperparameter Tuning")
     st.caption(
-        "Optimize model hyperparameters using Optuna and track all experiments. "
-        "This replaces manual trial-and-error with automated Bayesian search."
+        "Optimize classifier hyperparameters with Optuna. Scoring is ROC AUC "
+        "on stratified 5-fold cross-validation — replacing manual trial-and-error "
+        "with automated Bayesian search."
     )
     st.markdown("---")
 
-    # ── Data prep ───────────────────────────────────────────────────
+    # ── Data prep (stratified split) ────────────────────────────────
     X = df[features].values
-    y = df[target].values
+    y = df[target].values.astype(int)
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
+        X, y, test_size=0.2, random_state=42, stratify=y,
     )
     scaler = StandardScaler()
     X_train_s = scaler.fit_transform(X_train)
@@ -48,10 +53,11 @@ def render():
     with col1:
         model_name = st.selectbox(
             "Model to tune",
-            ["🧠 MLP (Neural Network)", "Random Forest", "Gradient Boosting", "Ridge", "Lasso", "Elastic Net"],
+            ["🧠 MLP (Neural Network)", "Random Forest", "Gradient Boosting",
+             "Logistic Regression", "Decision Tree"],
         )
     with col2:
-        n_trials = st.slider("Number of trials", 5, 100, 5, step=5)
+        n_trials = st.slider("Number of trials", 5, 100, 15, step=5)
     with col3:
         cv_folds = st.slider("CV folds", 3, 10, 5)
 
@@ -72,7 +78,7 @@ def render():
             "max_depth": "3 — 30",
             "min_samples_split": "2 — 20",
             "min_samples_leaf": "1 — 10",
-            "max_features": "sqrt, log2, 0.5—1.0",
+            "max_features": "sqrt, log2",
         },
         "Gradient Boosting": {
             "n_estimators": "50 — 500",
@@ -81,9 +87,17 @@ def render():
             "subsample": "0.6 — 1.0",
             "min_samples_split": "2 — 20",
         },
-        "Ridge": {"alpha": "0.001 — 100"},
-        "Lasso": {"alpha": "0.001 — 100"},
-        "Elastic Net": {"alpha": "0.001 — 100", "l1_ratio": "0.0 — 1.0"},
+        "Logistic Regression": {
+            "C (inverse regularization)": "0.001 — 100",
+            "penalty": "l1, l2",
+            "class_weight": "balanced, none",
+        },
+        "Decision Tree": {
+            "max_depth": "2 — 25",
+            "min_samples_split": "2 — 20",
+            "min_samples_leaf": "1 — 10",
+            "criterion": "gini, entropy",
+        },
     }
 
     # ── MLP architecture visualizer ─────────────────────────────────
@@ -91,13 +105,13 @@ def render():
         st.markdown("### 🏗️ Neural Network Architecture Preview")
         st.markdown(
             "The MLP (Multi-Layer Perceptron) is a fully-connected feedforward "
-            "neural network. Optuna will search over the number of hidden layers, "
-            "neurons per layer, activation function, learning rate, and regularization."
+            "neural network. Optuna searches over number of hidden layers, neurons "
+            "per layer, activation function, learning rate, and regularization."
         )
         st.markdown(
             "```\n"
             "Input Layer ──▶ Hidden Layer(s) ──▶ Output Layer\n"
-            "  (features)    (relu/tanh/logistic)   (prediction)\n"
+            "  (features)    (relu/tanh/logistic)    (P(Response=1))\n"
             "```"
         )
 
@@ -128,14 +142,11 @@ def render():
             wb_run = wandb_tracker.init_run(
                 run_name=f"{ds_key}-tune-{model_name}",
                 config={
-                    "dataset": ds_key,
-                    "model": model_name,
-                    "n_trials": n_trials,
-                    "cv_folds": cv_folds,
-                    "target": target,
-                    "n_features": len(features),
+                    "dataset": ds_key, "model": model_name,
+                    "n_trials": n_trials, "cv_folds": cv_folds,
+                    "target": target, "n_features": len(features),
                 },
-                job_type="hparam-search",
+                job_type="classify-hparam-search",
             )
 
         def objective(trial):
@@ -147,8 +158,10 @@ def render():
                 )
                 params = {
                     "hidden_layer_sizes": hidden_layers,
-                    "activation": trial.suggest_categorical("activation", ["relu", "tanh", "logistic"]),
-                    "learning_rate_init": trial.suggest_float("learning_rate_init", 1e-4, 1e-2, log=True),
+                    "activation": trial.suggest_categorical(
+                        "activation", ["relu", "tanh", "logistic"]),
+                    "learning_rate_init": trial.suggest_float(
+                        "learning_rate_init", 1e-4, 1e-2, log=True),
                     "alpha": trial.suggest_float("alpha", 1e-4, 0.1, log=True),
                     "batch_size": trial.suggest_int("batch_size", 16, 128, log=True),
                     "max_iter": trial.suggest_int("max_iter", 200, 1000, step=100),
@@ -156,7 +169,7 @@ def render():
                     "early_stopping": True,
                     "validation_fraction": 0.1,
                 }
-                model = MLPRegressor(**params)
+                model = MLPClassifier(**params)
                 X_use, y_use = X_train_s, y_train
             elif model_name == "Random Forest":
                 params = {
@@ -164,9 +177,11 @@ def render():
                     "max_depth": trial.suggest_int("max_depth", 3, 30),
                     "min_samples_split": trial.suggest_int("min_samples_split", 2, 20),
                     "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 10),
+                    "max_features": trial.suggest_categorical("max_features", ["sqrt", "log2"]),
+                    "class_weight": "balanced",
                     "random_state": 42, "n_jobs": -1,
                 }
-                model = RandomForestRegressor(**params)
+                model = RandomForestClassifier(**params)
                 X_use, y_use = X_train, y_train
             elif model_name == "Gradient Boosting":
                 params = {
@@ -177,23 +192,35 @@ def render():
                     "min_samples_split": trial.suggest_int("min_samples_split", 2, 20),
                     "random_state": 42,
                 }
-                model = GradientBoostingRegressor(**params)
+                model = GradientBoostingClassifier(**params)
                 X_use, y_use = X_train, y_train
-            elif model_name == "Ridge":
-                alpha = trial.suggest_float("alpha", 0.001, 100, log=True)
-                model = Ridge(alpha=alpha)
+            elif model_name == "Logistic Regression":
+                params = {
+                    "C": trial.suggest_float("C", 0.001, 100, log=True),
+                    "penalty": trial.suggest_categorical("penalty", ["l1", "l2"]),
+                    "class_weight": trial.suggest_categorical(
+                        "class_weight", ["balanced", None]),
+                    "solver": "liblinear",
+                    "max_iter": 2000,
+                    "random_state": 42,
+                }
+                model = LogisticRegression(**params)
                 X_use, y_use = X_train_s, y_train
-            elif model_name == "Lasso":
-                alpha = trial.suggest_float("alpha", 0.001, 100, log=True)
-                model = Lasso(alpha=alpha)
-                X_use, y_use = X_train_s, y_train
-            else:
-                alpha = trial.suggest_float("alpha", 0.001, 100, log=True)
-                l1_ratio = trial.suggest_float("l1_ratio", 0.0, 1.0)
-                model = ElasticNet(alpha=alpha, l1_ratio=l1_ratio)
-                X_use, y_use = X_train_s, y_train
+            else:  # Decision Tree
+                params = {
+                    "max_depth": trial.suggest_int("max_depth", 2, 25),
+                    "min_samples_split": trial.suggest_int("min_samples_split", 2, 20),
+                    "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 10),
+                    "criterion": trial.suggest_categorical("criterion", ["gini", "entropy"]),
+                    "class_weight": "balanced",
+                    "random_state": 42,
+                }
+                model = DecisionTreeClassifier(**params)
+                X_use, y_use = X_train, y_train
 
-            scores = cross_val_score(model, X_use, y_use, cv=cv_folds, scoring="r2")
+            scores = cross_val_score(
+                model, X_use, y_use, cv=cv_folds, scoring="roc_auc", n_jobs=1,
+            )
             return scores.mean()
 
         progress = st.progress(0, text="Optimizing...")
@@ -204,95 +231,108 @@ def render():
         def callback(study, trial):
             progress.progress(
                 (trial.number + 1) / n_trials,
-                text=f"Trial {trial.number + 1}/{n_trials} — Best R²: {study.best_value:.4f}",
+                text=f"Trial {trial.number + 1}/{n_trials} — Best ROC AUC: "
+                     f"{study.best_value:.4f}",
             )
             score = trial.value if trial.value is not None else float("nan")
             params_str = ", ".join(f"{k}={v}" for k, v in trial.params.items())
             log_lines.append(
-                f"Trial {trial.number + 1:>3}/{n_trials} │ R²={score:.4f} │ best={study.best_value:.4f} │ {params_str}"
+                f"Trial {trial.number + 1:>3}/{n_trials} │ "
+                f"ROC AUC={score:.4f} │ best={study.best_value:.4f} │ {params_str}"
             )
             live_log.code("\n".join(log_lines), language="text")
             wandb_tracker.log_metrics(wb_run, {
-                "trial/r2": score if score == score else 0.0,
-                "trial/best_r2": study.best_value,
+                "trial/roc_auc": score if score == score else 0.0,
+                "trial/best_roc_auc": study.best_value,
             }, step=trial.number)
 
         study.optimize(objective, n_trials=n_trials, callbacks=[callback])
         progress.empty()
 
         # ── Evaluate best model on test set ─────────────────────────
-        best_params = study.best_params
+        best_params = dict(study.best_params)
+        display_params = dict(best_params)  # copy for UI
         if model_name == "🧠 MLP (Neural Network)":
-            # Reconstruct hidden_layer_sizes from individual layer params
             n_layers = best_params.pop("n_hidden_layers")
             hidden_layers = tuple(
                 best_params.pop(f"neurons_layer_{i}") for i in range(n_layers)
             )
-            # Remove any extra layer keys from unused layers
             for k in list(best_params.keys()):
                 if k.startswith("neurons_layer_"):
                     best_params.pop(k)
-            best_model = MLPRegressor(
+            best_model = MLPClassifier(
                 hidden_layer_sizes=hidden_layers,
                 **best_params, random_state=42,
                 early_stopping=True, validation_fraction=0.1,
             )
             best_model.fit(X_train_s, y_train)
-            y_pred = best_model.predict(X_test_s)
-            # Re-add for display
-            best_params["n_hidden_layers"] = n_layers
-            best_params["architecture"] = " → ".join(str(n) for n in hidden_layers)
+            y_proba = best_model.predict_proba(X_test_s)[:, 1]
+            display_params = {
+                "n_hidden_layers": n_layers,
+                "architecture": " → ".join(str(n) for n in hidden_layers),
+                **best_params,
+            }
         elif model_name == "Random Forest":
-            best_model = RandomForestRegressor(**best_params, random_state=42, n_jobs=-1)
+            best_model = RandomForestClassifier(
+                **best_params, class_weight="balanced",
+                random_state=42, n_jobs=-1,
+            )
             best_model.fit(X_train, y_train)
-            y_pred = best_model.predict(X_test)
+            y_proba = best_model.predict_proba(X_test)[:, 1]
         elif model_name == "Gradient Boosting":
-            best_model = GradientBoostingRegressor(**best_params, random_state=42)
+            best_model = GradientBoostingClassifier(**best_params, random_state=42)
             best_model.fit(X_train, y_train)
-            y_pred = best_model.predict(X_test)
-        elif model_name == "Ridge":
-            best_model = Ridge(**best_params)
+            y_proba = best_model.predict_proba(X_test)[:, 1]
+        elif model_name == "Logistic Regression":
+            best_model = LogisticRegression(
+                **best_params, solver="liblinear",
+                max_iter=2000, random_state=42,
+            )
             best_model.fit(X_train_s, y_train)
-            y_pred = best_model.predict(X_test_s)
-        elif model_name == "Lasso":
-            best_model = Lasso(**best_params)
-            best_model.fit(X_train_s, y_train)
-            y_pred = best_model.predict(X_test_s)
-        else:
-            best_model = ElasticNet(**best_params)
-            best_model.fit(X_train_s, y_train)
-            y_pred = best_model.predict(X_test_s)
+            y_proba = best_model.predict_proba(X_test_s)[:, 1]
+        else:  # Decision Tree
+            best_model = DecisionTreeClassifier(
+                **best_params, class_weight="balanced", random_state=42,
+            )
+            best_model.fit(X_train, y_train)
+            y_proba = best_model.predict_proba(X_test)[:, 1]
+
+        y_pred = (y_proba >= 0.5).astype(int)
 
         # Store results
         trials_data = []
         for t in study.trials:
-            row = {"Trial": t.number, "R² (CV)": t.value}
+            row = {"Trial": t.number, "ROC AUC (CV)": t.value}
             row.update(t.params)
             trials_data.append(row)
 
         st.session_state["tune_study"] = study
         st.session_state["tune_trials"] = pd.DataFrame(trials_data)
-        st.session_state["tune_best_params"] = best_params
+        st.session_state["tune_best_params"] = display_params
         st.session_state["tune_test_metrics"] = {
-            "R²": r2_score(y_test, y_pred),
-            "MAE": mean_absolute_error(y_test, y_pred),
-            "RMSE": np.sqrt(mean_squared_error(y_test, y_pred)),
+            "ROC AUC": roc_auc_score(y_test, y_proba),
+            "PR AUC": average_precision_score(y_test, y_proba),
+            "F1": f1_score(y_test, y_pred, zero_division=0),
+            "Accuracy": accuracy_score(y_test, y_pred),
         }
         st.session_state["tune_y_test"] = y_test
         st.session_state["tune_y_pred"] = y_pred
+        st.session_state["tune_y_proba"] = y_proba
         st.session_state["tune_model_name"] = model_name
         st.session_state["tune_ready"] = True
 
         if wb_run is not None:
             wandb_tracker.log_metrics(wb_run, {
-                "final/best_cv_r2": study.best_value,
-                "final/test_r2": st.session_state["tune_test_metrics"]["R²"],
-                "final/test_mae": st.session_state["tune_test_metrics"]["MAE"],
-                "final/test_rmse": st.session_state["tune_test_metrics"]["RMSE"],
+                "final/best_cv_roc_auc": study.best_value,
+                "final/test_roc_auc": st.session_state["tune_test_metrics"]["ROC AUC"],
+                "final/test_pr_auc": st.session_state["tune_test_metrics"]["PR AUC"],
+                "final/test_f1": st.session_state["tune_test_metrics"]["F1"],
+                "final/test_accuracy": st.session_state["tune_test_metrics"]["Accuracy"],
             })
             try:
                 wb_run.summary["best_params"] = {
-                    k: v for k, v in best_params.items() if isinstance(v, (int, float, str))
+                    k: v for k, v in display_params.items()
+                    if isinstance(v, (int, float, str))
                 }
             except Exception:
                 pass
@@ -308,15 +348,19 @@ def render():
     test_metrics = st.session_state["tune_test_metrics"]
     y_test = st.session_state["tune_y_test"]
     y_pred = st.session_state["tune_y_pred"]
+    y_proba = st.session_state["tune_y_proba"]
     tuned_model = st.session_state["tune_model_name"]
 
     st.markdown("---")
 
     # ── Best parameters ─────────────────────────────────────────────
     st.markdown("### 🏆 Best Hyperparameters")
-    st.success(f"**{tuned_model}** — Best CV R²: {st.session_state['tune_study'].best_value:.4f}")
+    st.success(
+        f"**{tuned_model}** — Best CV ROC AUC: "
+        f"{st.session_state['tune_study'].best_value:.4f}"
+    )
 
-    param_cols = st.columns(len(best_params))
+    param_cols = st.columns(max(1, len(best_params)))
     for i, (k, v) in enumerate(best_params.items()):
         with param_cols[i]:
             display_val = f"{v:.4f}" if isinstance(v, float) else str(v)
@@ -324,21 +368,21 @@ def render():
 
     # ── Test set performance ────────────────────────────────────────
     st.markdown("### 📈 Test Set Performance (Best Model)")
-    m_cols = st.columns(3)
+    m_cols = st.columns(4)
     for i, (metric, val) in enumerate(test_metrics.items()):
         m_cols[i].metric(metric, f"{val:.4f}")
 
     st.markdown("---")
 
-    # ── Optimization history ────────────────────────────────────────
-    st.markdown("### 📉 Optimization History")
+    # ── Optimization history + confusion matrix + ROC ──────────────
+    st.markdown("### 📉 Optimization & Diagnostics")
     col_h1, col_h2 = st.columns(2)
 
     with col_h1:
-        best_so_far = trials_df["R² (CV)"].cummax()
+        best_so_far = trials_df["ROC AUC (CV)"].cummax()
         fig = go.Figure()
         fig.add_trace(go.Scatter(
-            x=trials_df["Trial"], y=trials_df["R² (CV)"],
+            x=trials_df["Trial"], y=trials_df["ROC AUC (CV)"],
             mode="markers", name="Trial score",
             marker=dict(color="#A5B4FC", size=6, opacity=0.5),
         ))
@@ -350,43 +394,78 @@ def render():
         fig.update_layout(
             template="plotly_white", height=400,
             title="Optimization Progress",
-            xaxis_title="Trial", yaxis_title="R² (CV)",
+            xaxis_title="Trial", yaxis_title="ROC AUC (CV)",
         )
         st.plotly_chart(fig, width='stretch')
 
     with col_h2:
-        fig = px.scatter(
-            x=y_test, y=y_pred, opacity=0.4,
-            color_discrete_sequence=["#4338CA"],
-            title=f"Best {tuned_model} — Actual vs Predicted",
-            labels={"x": "Actual", "y": "Predicted"},
-        )
-        mn = min(y_test.min(), y_pred.min())
-        mx = max(y_test.max(), y_pred.max())
-        fig.add_trace(go.Scatter(
-            x=[mn, mx], y=[mn, mx],
-            mode="lines", line=dict(color="red", dash="dash"),
-            showlegend=False,
+        cm = confusion_matrix(y_test, y_pred, labels=[0, 1])
+        total = cm.sum()
+        text = [
+            [f"{cm[0, 0]}<br>({cm[0, 0] / total * 100:.1f}%)",
+             f"{cm[0, 1]}<br>({cm[0, 1] / total * 100:.1f}%)"],
+            [f"{cm[1, 0]}<br>({cm[1, 0] / total * 100:.1f}%)",
+             f"{cm[1, 1]}<br>({cm[1, 1] / total * 100:.1f}%)"],
+        ]
+        fig = go.Figure(data=go.Heatmap(
+            z=cm, text=text, texttemplate="%{text}",
+            colorscale="Blues", showscale=False,
+            x=["Pred: No (0)", "Pred: Yes (1)"],
+            y=["Actual: No (0)", "Actual: Yes (1)"],
         ))
-        fig.update_layout(template="plotly_white", height=400)
+        fig.update_layout(
+            template="plotly_white", height=400,
+            title=f"Best {tuned_model} — Confusion Matrix (threshold=0.5)",
+        )
         st.plotly_chart(fig, width='stretch')
+
+    # ── ROC curve for best model ───────────────────────────────────
+    fpr, tpr, _ = roc_curve(y_test, y_proba)
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=fpr, y=tpr, mode="lines",
+        line=dict(color="#4338CA", width=3),
+        name=f"{tuned_model} (AUC={test_metrics['ROC AUC']:.3f})",
+    ))
+    fig.add_trace(go.Scatter(
+        x=[0, 1], y=[0, 1], mode="lines",
+        line=dict(color="gray", dash="dash", width=1),
+        name="Random", showlegend=False,
+    ))
+    fig.update_layout(
+        template="plotly_white", height=400,
+        title=f"Best {tuned_model} — ROC Curve (Test Set)",
+        xaxis_title="False Positive Rate",
+        yaxis_title="True Positive Rate (Recall)",
+    )
+    st.plotly_chart(fig, width='stretch')
 
     st.markdown("---")
 
     # ── Parallel coordinates ────────────────────────────────────────
     st.markdown("### 🔀 Hyperparameter Exploration")
-    param_names = [c for c in trials_df.columns if c not in ("Trial", "R² (CV)")]
+    param_names = [c for c in trials_df.columns if c not in ("Trial", "ROC AUC (CV)")]
     if len(param_names) >= 2:
-        dims = [dict(label="R² (CV)", values=trials_df["R² (CV)"])]
+        dims = [dict(label="ROC AUC (CV)", values=trials_df["ROC AUC (CV)"])]
         for p in param_names:
-            dims.append(dict(label=p, values=trials_df[p]))
+            col = trials_df[p]
+            if col.dtype == object:
+                # categorical — encode to integers for parcoords
+                codes, uniques = pd.factorize(col.astype(str))
+                dims.append(dict(
+                    label=p, values=codes,
+                    tickvals=list(range(len(uniques))),
+                    ticktext=list(uniques),
+                ))
+            else:
+                dims.append(dict(label=p, values=col))
         fig = go.Figure(go.Parcoords(
             line=dict(
-                color=trials_df["R² (CV)"],
+                color=trials_df["ROC AUC (CV)"],
                 colorscale="Blues",
                 showscale=True,
-                cmin=trials_df["R² (CV)"].min(),
-                cmax=trials_df["R² (CV)"].max(),
+                cmin=trials_df["ROC AUC (CV)"].min(),
+                cmax=trials_df["ROC AUC (CV)"].max(),
             ),
             dimensions=dims,
         ))
@@ -396,7 +475,7 @@ def render():
     # ── Experiment log ──────────────────────────────────────────────
     st.markdown("### 📋 Full Experiment Log")
     st.dataframe(
-        trials_df.sort_values("R² (CV)", ascending=False).style.format(
+        trials_df.sort_values("ROC AUC (CV)", ascending=False).style.format(
             {c: "{:.4f}" for c in trials_df.select_dtypes(include="float").columns}
         ),
         width='stretch',
