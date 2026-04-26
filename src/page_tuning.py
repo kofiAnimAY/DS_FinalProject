@@ -20,7 +20,10 @@ from sklearn.metrics import (
     roc_auc_score, average_precision_score, f1_score, accuracy_score,
     confusion_matrix, roc_curve,
 )
-from data_loader import dataset_selector, get_target, get_features, preprocess
+from data_loader import (
+    dataset_selector, get_target, get_features, preprocess,
+    preprocessing_callout,
+)
 from src import wandb_tracker
 
 
@@ -36,8 +39,20 @@ def render():
         "on stratified 5-fold cross-validation — replacing manual trial-and-error "
         "with automated Bayesian search."
     )
+    preprocessing_callout()
     st.markdown("---")
 
+    tab_new, tab_past = st.tabs([
+        "🆕 Run New Optimization",
+        "📚 Past Experiments (W&B)",
+    ])
+    with tab_new:
+        _render_new_tuning(ds_key, df, target, features)
+    with tab_past:
+        _render_past_experiments()
+
+
+def _render_new_tuning(ds_key, df, target, features):
     # ── Data prep (stratified split) ────────────────────────────────
     X = df[features].values
     y = df[target].values.astype(int)
@@ -480,4 +495,152 @@ def render():
         ),
         width='stretch',
         height=400,
+    )
+
+
+# ── Past experiments tab (W&B-backed) ──────────────────────────────
+def _render_past_experiments() -> None:
+    st.markdown("### 📚 Past Hyperparameter Experiments")
+    st.caption(
+        "Browse every tuning run logged to W&B from this project — across "
+        "models, sessions, and collaborators. Pick the best-performing run, "
+        "inspect its hyperparameters, and decide whether to reproduce it."
+    )
+
+    if not wandb_tracker.is_available():
+        st.info(
+            "📡 W&B tracking is **OFF**. Set `WANDB_API_KEY` and run at least one "
+            "tuning experiment with W&B logging enabled to populate this view."
+        )
+        return
+
+    cols = st.columns([1, 5])
+    with cols[0]:
+        if st.button("🔄 Refresh", help="Re-query W&B for the latest runs"):
+            wandb_tracker.fetch_past_runs.clear()
+            st.rerun()
+    with cols[1]:
+        st.caption("Cached for 2 minutes. Click **Refresh** after a fresh run.")
+
+    with st.spinner("Fetching runs from W&B..."):
+        runs = wandb_tracker.fetch_past_runs(job_type_substring="hparam-search")
+
+    if not runs:
+        st.warning(
+            "No past hyperparameter-search runs found in your W&B project yet. "
+            "Run an optimization on the **🆕 Run New Optimization** tab with the "
+            "W&B logging checkbox enabled — it will appear here on next refresh."
+        )
+        return
+
+    # ── Build leaderboard table ───────────────────────────────────
+    rows = []
+    for r in runs:
+        s = r["summary"]
+        rows.append({
+            "Run name": r["name"],
+            "Model": r["model"],
+            "Best CV ROC AUC": s.get("final/best_cv_roc_auc"),
+            "Test ROC AUC": s.get("final/test_roc_auc"),
+            "Test PR AUC": s.get("final/test_pr_auc"),
+            "Test F1": s.get("final/test_f1"),
+            "Test Accuracy": s.get("final/test_accuracy"),
+            "Created (UTC)": r["created_at"][:19].replace("T", " "),
+            "State": r["state"],
+            "URL": r["url"],
+            "ID": r["id"],
+        })
+    runs_df = pd.DataFrame(rows)
+    completed = runs_df.dropna(subset=["Test ROC AUC"])
+
+    if completed.empty:
+        st.warning(
+            f"Found {len(runs_df)} run(s) but none have completed final test "
+            "metrics yet. Wait for a run to finish, then refresh."
+        )
+        return
+
+    completed = completed.sort_values("Test ROC AUC", ascending=False).reset_index(drop=True)
+
+    # ── Highlight best ────────────────────────────────────────────
+    top = completed.iloc[0]
+    pr_str = f"{top['Test PR AUC']:.4f}" if pd.notna(top["Test PR AUC"]) else "—"
+    f1_str = f"{top['Test F1']:.4f}" if pd.notna(top["Test F1"]) else "—"
+    st.success(
+        f"🏆 **Best past run:** `{top['Run name']}` — Model: **{top['Model']}** · "
+        f"Test ROC AUC = **{top['Test ROC AUC']:.4f}** · "
+        f"Test PR AUC = {pr_str} · Test F1 = {f1_str}"
+    )
+
+    # ── Leaderboard table ─────────────────────────────────────────
+    display = completed.drop(columns=["URL", "ID"])
+    st.dataframe(
+        display.style.format({
+            "Best CV ROC AUC": "{:.4f}",
+            "Test ROC AUC": "{:.4f}",
+            "Test PR AUC": "{:.4f}",
+            "Test F1": "{:.4f}",
+            "Test Accuracy": "{:.4f}",
+        }, na_rep="—")
+        .background_gradient(
+            subset=["Test ROC AUC", "Test PR AUC", "Test F1"],
+            cmap="Blues",
+        ),
+        width='stretch',
+        hide_index=True,
+    )
+
+    st.markdown("---")
+
+    # ── Inspect a single run ──────────────────────────────────────
+    st.markdown("#### 🔬 Inspect a Run")
+    selected = st.selectbox(
+        "Pick a run to view its hyperparameters and metrics",
+        completed["Run name"].tolist(),
+        key="wb_inspect_run",
+    )
+    sel_row = completed[completed["Run name"] == selected].iloc[0]
+    sel_full = next((r for r in runs if r["id"] == sel_row["ID"]), None)
+
+    if sel_full is None:
+        st.warning("Run details unavailable.")
+        return
+
+    inspect_cols = st.columns(2)
+    with inspect_cols[0]:
+        st.markdown("**Hyperparameters**")
+        cfg_skip = {"dataset", "target", "n_features", "features",
+                    "test_size", "scale_data", "train_samples", "test_samples"}
+        cfg = {k: v for k, v in sel_full["config"].items()
+               if not k.startswith("_") and k not in cfg_skip}
+        if cfg:
+            st.json(cfg)
+        else:
+            st.caption("No hyperparameters logged for this run.")
+
+    with inspect_cols[1]:
+        st.markdown("**Final metrics**")
+        metrics = {
+            k: v for k, v in sel_full["summary"].items()
+            if (k.startswith("final/") or k.startswith("test/"))
+            and isinstance(v, (int, float))
+        }
+        if metrics:
+            st.json({k: round(v, 4) if isinstance(v, float) else v
+                     for k, v in metrics.items()})
+        else:
+            st.caption("No final metrics logged for this run.")
+
+    st.markdown(
+        f"🔗 **[View full run on W&B →]({sel_row['URL']})** "
+        "(includes per-trial scores, system metrics, and run logs)"
+    )
+
+    st.markdown("---")
+    st.markdown(
+        "💡 **What to do next:** the hyperparameters above are reproducible — "
+        "set them manually in the **Run New Optimization** tab (e.g. fix "
+        "`n_estimators`, `max_depth`, etc. to the best values) and re-train "
+        "to get the same model locally. Or note the configuration for the "
+        "final report."
     )

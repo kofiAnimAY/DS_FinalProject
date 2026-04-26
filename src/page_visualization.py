@@ -14,6 +14,7 @@ from plotly.subplots import make_subplots
 from data_loader import (
     dataset_selector, get_target, get_features,
     categorical_chart_kind, categorical_labels,
+    preprocess, compute_vif,
 )
 
 
@@ -153,7 +154,7 @@ def render():
             selected_bars = st.multiselect(
                 "Select count / ordinal features",
                 bar_feats,
-                default=bar_feats[: min(4, len(bar_feats))],
+                default=bar_feats[:min(4, len(bar_feats))],
                 key="dist_bars",
             )
             if selected_bars:
@@ -236,6 +237,74 @@ def render():
             f'background:#4338CA;border-radius:4px;"></span>',
             unsafe_allow_html=True,
         )
+
+    st.markdown("---")
+
+    # ── 3b. Multicollinearity check (on modeling features) ─────────
+    st.markdown("### 🧬 Multicollinearity Check — Modeling Features")
+    st.caption(
+        "Some of our engineered features (`TotalSpend`, `TotalAccepted`, "
+        "`TotalPurchases`) are sums of their components, so they're collinear "
+        "by construction. Tree models exploit the granularity; regularized "
+        "Logistic Regression handles the redundancy via L2. This panel makes "
+        "the issue visible rather than silent."
+    )
+    with st.expander("📖 Why this matters"):
+        st.markdown(
+            "When two features carry the same information, linear models "
+            "split the coefficient between them arbitrarily and can produce "
+            "**counterintuitive signs** (e.g. negative coefficient on a "
+            "clearly positive predictor). VIF (Variance Inflation Factor) is "
+            "the standard diagnostic:\n\n"
+            "- **VIF ≈ 1** — no collinearity\n"
+            "- **VIF 1–5** — moderate, usually fine\n"
+            "- **VIF 5–10** — high — investigate\n"
+            "- **VIF > 10** — severe — feature is a near-linear combination "
+            "of others; coefficient estimates are unreliable\n\n"
+            "Tree-based models are unaffected by VIF, but the interpretation "
+            "story still benefits from knowing which features are duplicates."
+        )
+
+    df_pp = preprocess(df)
+    pp_features = [c for c in df_pp.select_dtypes(include="number").columns
+                   if c != target]
+
+    mc_col1, mc_col2 = st.columns([1, 1])
+    with mc_col1:
+        st.markdown("**High-correlation pairs** (|r| ≥ 0.8)")
+        corr_pp = df_pp[pp_features].corr().abs()
+        # Upper triangle only, exclude diagonal
+        pairs = []
+        for i, f1 in enumerate(pp_features):
+            for f2 in pp_features[i + 1:]:
+                r = corr_pp.loc[f1, f2]
+                if r >= 0.8:
+                    pairs.append({"Feature A": f1, "Feature B": f2, "|r|": r})
+        if pairs:
+            pairs_df = pd.DataFrame(pairs).sort_values("|r|", ascending=False)
+            st.dataframe(
+                pairs_df.style.format({"|r|": "{:.3f}"})
+                .background_gradient(subset=["|r|"], cmap="Reds"),
+                width='stretch', hide_index=True,
+            )
+        else:
+            st.success("✅ No pairs above |r| = 0.8 — collinearity is mild.")
+
+    with mc_col2:
+        st.markdown("**Variance Inflation Factor (VIF)**")
+        vif_df = compute_vif(df_pp, pp_features)
+        # Cap inf for display
+        vif_display = vif_df.copy()
+        vif_display["VIF"] = vif_display["VIF"].replace(float("inf"), 999.0)
+        st.dataframe(
+            vif_display.style.format({"VIF": "{:.2f}"})
+            .background_gradient(subset=["VIF"], cmap="Reds", vmin=1, vmax=10),
+            width='stretch', hide_index=True, height=400,
+        )
+        n_high = int((vif_df["VIF"] >= 10).sum())
+        if n_high > 0:
+            st.caption(f"⚠️ {n_high} feature(s) with VIF ≥ 10 — expected here, "
+                       "since `Total*` engineered features are sums of their components.")
 
     st.markdown("---")
 

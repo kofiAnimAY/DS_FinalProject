@@ -5,12 +5,6 @@ Provides cached dataset loading for all pages.
 
 import streamlit as st
 import pandas as pd
-import numpy as np
-# from sklearn.datasets import (
-#     fetch_california_housing,
-#     load_wine,
-#     load_diabetes,
-# )
 
 
 # ── Available datasets ──────────────────────────────────────────────
@@ -151,8 +145,8 @@ def preprocess(_df: pd.DataFrame) -> pd.DataFrame:
     d.drop(columns=["Complain", "NumDealsPurchases", "NumWebVisitsMonth"],
            inplace=True, errors="ignore")
 
-    # Drop non-informative columns
-    d.drop(columns=["ID", "Z_CostContact", "Z_Revenue"], inplace=True, errors="ignore")
+    # Drop the customer ID — Z_CostContact / Z_Revenue are already dropped in load_data()
+    d.drop(columns=["ID"], inplace=True, errors="ignore")
 
     return d
 
@@ -183,6 +177,61 @@ def categorical_chart_kind(s: pd.Series, max_unique_int: int = 5) -> str:
         except (TypeError, ValueError):
             pass
     return "continuous"
+
+
+def compute_vif(df: pd.DataFrame, features: list[str]) -> pd.DataFrame:
+    """Compute Variance Inflation Factor for each feature.
+
+    VIF interpretation:
+    - 1.0 = no multicollinearity
+    - 1 < VIF < 5 = moderate, usually fine
+    - 5 < VIF < 10 = high — investigate
+    - VIF > 10 = severe multicollinearity — feature is a near-linear combination
+      of others, parameter estimates are unreliable
+    """
+    from sklearn.linear_model import LinearRegression
+
+    X = df[features].copy()
+    X = X.fillna(X.median(numeric_only=True))
+    rows = []
+    for feat in features:
+        y = X[feat].values
+        X_other = X.drop(columns=[feat]).values
+        if X_other.shape[1] == 0:
+            rows.append({"Feature": feat, "VIF": float("nan")})
+            continue
+        try:
+            r2 = LinearRegression().fit(X_other, y).score(X_other, y)
+            vif = 1.0 / (1.0 - r2) if r2 < 0.9999 else float("inf")
+        except Exception:
+            vif = float("nan")
+        rows.append({"Feature": feat, "VIF": vif})
+    return pd.DataFrame(rows).sort_values("VIF", ascending=False).reset_index(drop=True)
+
+
+def preprocessing_callout() -> None:
+    """Render an expander explaining the feature transformations.
+
+    Used at the top of the prediction / tuning / explainability pages so the
+    column names there make sense after intro / visualization showed raw data.
+    """
+    with st.expander("📌 What's preprocessed?", expanded=False):
+        st.markdown(
+            "Features below are the output of `preprocess()`, **not** the raw "
+            "columns shown on the Business Case and Visualization pages:\n\n"
+            "- **`Age`** — derived from `Year_Birth` (capped at 100)\n"
+            "- **`Tenure_Days`** — derived from `Dt_Customer` (days as customer)\n"
+            "- **`TotalSpend`** — sum of the 6 product spend columns\n"
+            "- **`TotalPurchases`** — sum of web + catalog + store purchases\n"
+            "- **`TotalAccepted`** — count of past accepted campaigns (0–5)\n"
+            "- **`HasChildren`** — binary (1 if `Kidhome + Teenhome > 0`)\n"
+            "- **`Education`** — ordinal-encoded (Basic = 0 … PhD = 3)\n"
+            "- **`Marital_Status`** — binary (1 = partnered, 0 = single)\n"
+            "- **`Income`** — median-imputed and 99th-percentile capped\n\n"
+            "Dropped: `Complain`, `NumDealsPurchases`, `NumWebVisitsMonth` "
+            "(zero-correlation with target), plus `ID` / `Z_CostContact` / `Z_Revenue` "
+            "(non-features)."
+        )
 
 
 def categorical_labels(values):

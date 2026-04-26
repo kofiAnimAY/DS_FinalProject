@@ -76,7 +76,10 @@ st.markdown("""
 
 
 # ── Navigation ──────────────────────────────────────────────────────
-from src import page_intro, page_visualization, page_prediction, page_explainability, page_tuning
+from src import (
+    page_intro, page_visualization, page_prediction,
+    page_explainability, page_tuning, page_conclusions,
+)
 from src import wandb_tracker
 
 PAGES = {
@@ -85,6 +88,7 @@ PAGES = {
     "🤖 Model Prediction": page_prediction,
     "🔍 Explainability (SHAP)": page_explainability,
     "⚙️ Hyperparameter Tuning": page_tuning,
+    "📊 Conclusions & Recommendations": page_conclusions,
 }
 
 with st.sidebar:
@@ -93,8 +97,6 @@ with st.sidebar:
     selected = st.radio("Navigate", list(PAGES.keys()), label_visibility="collapsed")
     st.markdown("---")
     wandb_tracker.status_badge()
-    st.caption("DS-UA 9111 · Prof. Gaëtan Brison")
-    st.caption("© 2026 NYU Data Science for Everyone")
 
 # ── Render selected page ────────────────────────────────────────────
 PAGES[selected].render()

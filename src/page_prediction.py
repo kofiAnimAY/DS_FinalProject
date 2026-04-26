@@ -22,7 +22,10 @@ from sklearn.metrics import (
     roc_auc_score, average_precision_score,
     confusion_matrix, roc_curve, precision_recall_curve,
 )
-from data_loader import dataset_selector, get_target, get_features, preprocess
+from data_loader import (
+    dataset_selector, get_target, get_features, preprocess,
+    preprocessing_callout,
+)
 from src import wandb_tracker
 
 
@@ -47,7 +50,7 @@ MODELS = {
     "Gradient Boosting": lambda: GradientBoostingClassifier(
         random_state=42, n_estimators=200,
     ),
-    "🧠 MLP (Neural Net)": _mlp_factory,
+    "🧠 MLP (Neural Network)": _mlp_factory,
 }
 
 
@@ -63,6 +66,7 @@ def render():
         "Compare ROC AUC, PR AUC, F1 — then slide the threshold in the targeting "
         "widget to simulate a campaign rollout."
     )
+    preprocessing_callout()
     st.markdown("---")
 
     # ── Feature & split config ──────────────────────────────────────
@@ -228,8 +232,15 @@ def render():
             "CV ROC AUC (mean)": "{:.4f}",
             "CV ROC AUC (std)": "{:.4f}",
         })
-        .background_gradient(subset=["ROC AUC", "PR AUC", "F1"], cmap="Blues"),
+        .background_gradient(
+            subset=["ROC AUC", "PR AUC", "F1", "Precision"], cmap="Blues",
+        ),
         width='stretch',
+    )
+    st.caption(
+        f"📊 Test metrics computed on a single {len(y_test):,}-row holdout — "
+        f"expect ~±0.02 noise on each AUC. CV ROC AUC (mean ± std) on the "
+        f"training folds is the more stable comparison."
     )
 
     st.markdown("---")
@@ -306,6 +317,17 @@ def render():
     model_to_plot = st.selectbox("Select model to inspect", model_choices)
     y_pred = preds[model_to_plot]
     y_proba = probas[model_to_plot]
+
+    # ── Recall guard: flag if the default-threshold model misses too many positives
+    inspect_recall = recall_score(y_test, y_pred, zero_division=0)
+    if inspect_recall < 0.3:
+        st.warning(
+            f"⚠️ **{model_to_plot}** catches only **{inspect_recall:.1%}** of "
+            "actual responders at the default 0.5 threshold. For a marketing "
+            "campaign you almost certainly want higher recall — drop the "
+            "threshold in the **🎯 Campaign Targeting** widget below to trade "
+            "some precision for more responders captured."
+        )
 
     col_i1, col_i2 = st.columns(2)
     with col_i1:
@@ -398,3 +420,24 @@ def render():
         m5.metric("Response rate (contacted)", f"{precision_at_t:.1%}")
         m6.metric("Base rate", f"{base_rate:.1%}")
         m7.metric("Lift over base", f"{lift:.2f}×")
+
+    st.markdown("---")
+
+    # ── What this model can't do ───────────────────────────────────
+    st.markdown("### ⚠️ What This Model Can't Do")
+    st.markdown("""
+- **Cold-start customers.** Every feature is behavioral — past spend, recency,
+  prior campaign acceptance, tenure. A brand-new customer with no history can't
+  be scored, even though they're often who you'd most want to target.
+- **Concept drift.** The model is trained on a static snapshot. If buying
+  patterns shift (recession, new competitors, seasonal swings, channel changes),
+  the predictions decay. Plan to retrain after every campaign cycle and watch
+  for drops in test ROC AUC over time.
+- **Causal claims.** A high P(Response) tells you who *would* convert under the
+  marketing methods that generated this dataset — not who *would have* converted
+  if you tried something different. For evaluating new tactics (channels,
+  offers, timing), A/B test rather than relying on the model's predictions.
+- **Selection effects.** This dataset is people who became customers and stayed
+  long enough to be counted. People who churned early or never engaged with
+  marketing aren't represented — the model doesn't know what it doesn't know.
+""")

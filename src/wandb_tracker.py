@@ -97,3 +97,43 @@ def status_badge() -> None:
         st.caption(f"📡 W&B tracking: **ON** · project `{project}`")
     else:
         st.caption("📡 W&B tracking: **OFF** (set WANDB_API_KEY in `.env`)")
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def fetch_past_runs(job_type_substring: str | None = None,
+                    limit: int = 100) -> list[dict]:
+    """Pull recent runs from the configured W&B project.
+
+    Returns a list of plain dicts (so Streamlit caching works). Empty list
+    if W&B isn't available, the project has no runs, or the API call fails.
+    """
+    if not is_available():
+        return []
+    try:
+        wandb.login(key=os.environ["WANDB_API_KEY"], relogin=False, verify=False)
+        api = wandb.Api(timeout=10)
+        project = _ascii_safe(os.environ.get("WANDB_PROJECT", "ds4e-final-project"))
+        entity = os.environ.get("WANDB_ENTITY") or api.default_entity
+        path = f"{entity}/{project}"
+        runs = list(api.runs(path, per_page=limit))
+        out = []
+        for r in runs[:limit]:
+            if job_type_substring and job_type_substring not in (r.job_type or ""):
+                continue
+            out.append({
+                "id": r.id,
+                "name": r.name,
+                "model": r.config.get("model", "—"),
+                "job_type": r.job_type or "—",
+                "created_at": str(r.created_at),
+                "state": r.state,
+                "summary": {k: v for k, v in dict(r.summary).items()
+                            if isinstance(v, (int, float, str, bool))},
+                "config": {k: v for k, v in dict(r.config).items()
+                           if isinstance(v, (int, float, str, bool))},
+                "url": r.url,
+            })
+        return out
+    except Exception as exc:
+        st.warning(f"⚠️ Could not fetch W&B runs: {exc}")
+        return []

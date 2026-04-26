@@ -52,6 +52,14 @@ def _extract_positive_class_shap(shap_values_raw) -> np.ndarray:
     return arr
 
 
+def _extract_expected_value(explainer) -> float:
+    """Extract the base log-odds value for the positive class."""
+    ev = explainer.expected_value
+    if isinstance(ev, (list, tuple, np.ndarray)) and np.asarray(ev).size > 1:
+        return float(np.asarray(ev).flatten()[-1])
+    return float(np.asarray(ev).flatten()[0])
+
+
 def compute_for(dataset_key: str, model_name: str) -> dict:
     df = preprocess(load_data(dataset_key))
     target = get_target(dataset_key)
@@ -92,6 +100,7 @@ def compute_for(dataset_key: str, model_name: str) -> dict:
         explainer = shap.TreeExplainer(model)
         shap_arr = _extract_positive_class_shap(explainer.shap_values(X_test))
         payload["shap_values"] = shap_arr
+        payload["expected_value"] = _extract_expected_value(explainer)
         payload["shap_df"] = pd.DataFrame({
             "Feature": features,
             "Mean |SHAP|": np.abs(shap_arr).mean(axis=0),
