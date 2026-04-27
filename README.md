@@ -16,7 +16,7 @@ tags:
   - nyu
 pinned: true
 license: mit
-short_description: Marketing response: 5 classifiers + SHAP + Optuna tuning
+short_description: Marketing response — 5 classifiers + SHAP + Optuna tuning
 ---
 
 # DS4E Final Project — Marketing Campaign Response Predictor 🎯
