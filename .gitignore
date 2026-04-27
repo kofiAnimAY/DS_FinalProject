@@ -130,3 +130,9 @@ dmypy.json
 
 # Weights & Biases local run logs (synced to wandb.ai; no need to commit)
 wandb/
+
+# SHAP importance pickle cache — regenerate via `python precompute_importance.py`
+cache/
+
+# macOS Finder metadata
+.DS_Store

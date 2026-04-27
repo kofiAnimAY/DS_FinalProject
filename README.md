@@ -1,3 +1,24 @@
+---
+title: DS4E Final Project — Marketing Campaign Response
+emoji: 🎯
+colorFrom: indigo
+colorTo: purple
+sdk: docker
+app_port: 8501
+tags:
+  - streamlit
+  - machine-learning
+  - classification
+  - marketing
+  - shap
+  - optuna
+  - imbalanced-data
+  - nyu
+pinned: true
+license: mit
+short_description: End-to-end ML app — EDA, 5-classifier prediction, SHAP, Optuna tuning
+---
+
 # DS4E Final Project — Marketing Campaign Response Predictor 🎯
 
 **Course:** DS-UA 9111 — Data Science for Everyone @ NYU
