@@ -18,6 +18,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.neural_network import MLPClassifier
 from sklearn.inspection import permutation_importance
 from sklearn.model_selection import train_test_split
 
@@ -32,6 +34,12 @@ MODELS = {
     ),
     "Gradient Boosting": lambda: GradientBoostingClassifier(
         n_estimators=100, random_state=42,
+    ),
+    "Decision Tree": lambda: DecisionTreeClassifier(
+        random_state=42, class_weight="balanced",
+    ),
+    "MLP": lambda: MLPClassifier(
+        hidden_layer_sizes=(100,), max_iter=1000, random_state=42,
     ),
 }
 
@@ -73,11 +81,6 @@ def compute_for(dataset_key: str, model_name: str) -> dict:
     model = MODELS[model_name]()
     model.fit(X_train, y_train)
 
-    imp_df = pd.DataFrame({
-        "Feature": features,
-        "Importance": model.feature_importances_,
-    }).sort_values("Importance", ascending=True)
-
     perm_result = permutation_importance(
         model, X_test, y_test, n_repeats=10, random_state=42,
         n_jobs=-1, scoring="roc_auc",
@@ -88,6 +91,15 @@ def compute_for(dataset_key: str, model_name: str) -> dict:
         "Std": perm_result.importances_std,
     }).sort_values("Importance", ascending=True)
 
+    if hasattr(model, 'feature_importances_'):
+        imp_df = pd.DataFrame({
+            "Feature": features,
+            "Importance": model.feature_importances_,
+        }).sort_values("Importance", ascending=True)
+    else:
+        # For models without built-in importance (e.g., MLP), use permutation importance
+        imp_df = perm_df.copy()
+
     payload = {
         "features": features,
         "imp_df": imp_df,
@@ -97,8 +109,19 @@ def compute_for(dataset_key: str, model_name: str) -> dict:
 
     try:
         import shap
-        explainer = shap.TreeExplainer(model)
-        shap_arr = _extract_positive_class_shap(explainer.shap_values(X_test))
+        if hasattr(model, 'feature_importances_'):
+            # Tree-based models
+            explainer = shap.TreeExplainer(model)
+            shap_arr = _extract_positive_class_shap(explainer.shap_values(X_test))
+        else:
+            # For other models like MLP, use KernelExplainer (slower)
+            background = X_train.sample(min(100, len(X_train)), random_state=42)
+            explainer = shap.KernelExplainer(model.predict_proba, background)
+            shap_values = explainer.shap_values(X_test, nsamples=100)
+            if isinstance(shap_values, list):
+                shap_arr = np.array(shap_values[1])  # For positive class
+            else:
+                shap_arr = np.array(shap_values)
         payload["shap_values"] = shap_arr
         payload["expected_value"] = _extract_expected_value(explainer)
         payload["shap_df"] = pd.DataFrame({

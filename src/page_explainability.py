@@ -2,7 +2,7 @@
 Page 4 — Explainability (SHAP) — Classification
 ================================================
 Three lenses on what drives Response = 1:
-- Built-in tree importance (impurity reduction)
+- Built-in/model importance (impurity reduction for trees, permutation for others)
 - Permutation importance (ROC AUC drop when feature is shuffled)
 - SHAP values (per-prediction contributions)
 
@@ -26,6 +26,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.neural_network import MLPClassifier
 from sklearn.inspection import permutation_importance
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
@@ -124,14 +126,17 @@ def compute_live(ds_key: str, model_name: str, df: pd.DataFrame,
             n_estimators=100, random_state=42,
             class_weight="balanced", n_jobs=1,
         )
+    elif model_name == "Decision Tree":
+        model = DecisionTreeClassifier(
+            random_state=42, class_weight="balanced",
+        )
+    elif model_name == "MLP":
+        model = MLPClassifier(
+            hidden_layer_sizes=(100,), max_iter=1000, random_state=42,
+        )
     else:
         model = GradientBoostingClassifier(n_estimators=100, random_state=42)
     model.fit(X_train, y_train)
-
-    imp_df = pd.DataFrame({
-        "Feature": features,
-        "Importance": model.feature_importances_,
-    }).sort_values("Importance", ascending=True)
 
     perm = permutation_importance(
         model, X_test, y_test, n_repeats=5, random_state=42,
@@ -143,6 +148,15 @@ def compute_live(ds_key: str, model_name: str, df: pd.DataFrame,
         "Std": perm.importances_std,
     }).sort_values("Importance", ascending=True)
 
+    if hasattr(model, 'feature_importances_'):
+        imp_df = pd.DataFrame({
+            "Feature": features,
+            "Importance": model.feature_importances_,
+        }).sort_values("Importance", ascending=True)
+    else:
+        # For models without built-in importance (e.g., MLP), use permutation importance
+        imp_df = perm_df.copy()
+
     payload = {
         "features": features,
         "imp_df": imp_df,
@@ -152,8 +166,19 @@ def compute_live(ds_key: str, model_name: str, df: pd.DataFrame,
 
     try:
         import shap
-        explainer = shap.TreeExplainer(model)
-        shap_arr = _extract_positive_class_shap(explainer.shap_values(X_test))
+        if hasattr(model, 'feature_importances_'):
+            # Tree-based models
+            explainer = shap.TreeExplainer(model)
+            shap_arr = _extract_positive_class_shap(explainer.shap_values(X_test))
+        else:
+            # For other models like MLP, use KernelExplainer (slower)
+            background = X_train.sample(min(100, len(X_train)), random_state=42)
+            explainer = shap.KernelExplainer(model.predict_proba, background)
+            shap_values = explainer.shap_values(X_test, nsamples=100)
+            if isinstance(shap_values, list):
+                shap_arr = np.array(shap_values[1])  # For positive class
+            else:
+                shap_arr = np.array(shap_values)
         payload["shap_values"] = shap_arr
         payload["expected_value"] = _extract_expected_value(explainer)
         payload["shap_df"] = pd.DataFrame({
@@ -175,7 +200,7 @@ def render() -> None:
     st.markdown("## 🔍 Explainability — Feature Importance")
     st.caption(
         "Three lenses on which features drive predictions of **Response = 1**: "
-        "tree importance, permutation importance (ROC AUC drop), and SHAP values. "
+        "built-in importance, permutation importance (ROC AUC drop), and SHAP values. "
         "Plus a per-customer explanation view at the bottom."
     )
     preprocessing_callout()
@@ -183,7 +208,7 @@ def render() -> None:
 
     model_name = st.selectbox(
         "Model for explainability analysis",
-        ["Random Forest", "Gradient Boosting"],
+        ["Random Forest", "Gradient Boosting", "Decision Tree", "MLP"],
     )
 
     cache_key = f"importance_{ds_key}_{model_name}"
@@ -398,20 +423,33 @@ def _render_key_drivers(payload: dict, info: dict) -> None:
 # ── Tab renderers ─────────────────────────────────────────────────
 def _render_tree_tab(payload: dict, model_name: str,
                      features: list[str], info: dict) -> None:
-    st.markdown(f"#### {model_name} — Built-in Feature Importance")
+    is_tree = model_name in ["Random Forest", "Gradient Boosting", "Decision Tree"]
+    importance_type = "Built-in" if not is_tree else "Tree"
+    st.markdown(f"#### {model_name} — {importance_type} Feature Importance")
 
     with st.expander("📖 How to read this"):
-        st.markdown(
-            "**What it measures.** When the tree splits on a feature, it asks: "
-            "*how much purer are the resulting groups?* Built-in importance "
-            "sums up that improvement across every split, across every tree.\n\n"
-            "**Strengths.** Fast, no extra computation needed. Good for getting "
-            "a first ranking.\n\n"
-            "**Weaknesses.** Biased toward high-cardinality features (e.g. "
-            "`Income` with thousands of distinct values can score artificially "
-            "high vs. a binary like `HasChildren`). Cross-check with "
-            "permutation importance for a fairer view."
-        )
+        if is_tree:
+            st.markdown(
+                "**What it measures.** When the tree splits on a feature, it asks: "
+                "*how much purer are the resulting groups?* Built-in importance "
+                "sums up that improvement across every split, across every tree.\n\n"
+                "**Strengths.** Fast, no extra computation needed. Good for getting "
+                "a first ranking.\n\n"
+                "**Weaknesses.** Biased toward high-cardinality features (e.g. "
+                "`Income` with thousands of distinct values can score artificially "
+                "high vs. a binary like `HasChildren`). Cross-check with "
+                "permutation importance for a fairer view."
+            )
+        else:
+            st.markdown(
+                "**What it measures.** For models without built-in feature importance "
+                "(like neural networks), we use permutation importance as a proxy: "
+                "the drop in performance when a feature is shuffled.\n\n"
+                "**Strengths.** Model-agnostic, directly measures feature impact. "
+                "Fair to all feature types.\n\n"
+                "**Note.** This is the same as the Permutation Importance tab, "
+                "shown here for consistency."
+            )
 
     imp_df = payload["imp_df"]
     fig = px.bar(
