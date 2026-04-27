@@ -127,3 +127,6 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Weights & Biases local run logs (synced to wandb.ai; no need to commit)
+wandb/

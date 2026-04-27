@@ -71,6 +71,22 @@ st.markdown("""
         border-radius: 10px;
         padding: 12px 16px;
     }
+    div[data-testid="stMetric"] [data-testid="stMetricLabel"] p {
+        color: #4B5563 !important;
+        font-weight: 500;
+    }
+    div[data-testid="stMetric"] [data-testid="stMetricValue"] {
+        color: #312E81 !important;
+    }
+    div[data-testid="stMetric"] [data-testid="stMetricValue"] div {
+        color: #312E81 !important;
+    }
+    div[data-testid="stMetric"] [data-testid="stMetricDelta"] {
+        color: #4B5563 !important;
+    }
+    div[data-testid="stMetric"] [data-testid="stMetricDelta"] svg {
+        fill: #4B5563 !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
