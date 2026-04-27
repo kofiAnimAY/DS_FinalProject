@@ -243,6 +243,85 @@ def render():
         f"training folds is the more stable comparison."
     )
 
+    with st.expander("📚 Which metric matters most for this problem?"):
+        st.markdown(f"""
+**Short answer**: precision >> accuracy, and PR AUC is the right headline.
+
+**Why accuracy is a poor metric here.** With ~{(1 - y_test.mean()) * 100:.0f}/{y_test.mean() * 100:.0f} class imbalance, a model that predicts "no" for everyone scores **{(1 - y_test.mean()) * 100:.0f}% accuracy** while being completely useless. Accuracy rewards the dominant class.
+
+**Precision maps directly to the business KPI.** The Campaign Targeting widget below surfaces this explicitly:
+
+> Response rate among contacted = `TP / (TP + FP)` = **precision**
+
+That's literally what marketing reports after a campaign — *"of the people we contacted, what fraction actually responded?"* Higher precision = less wasted spend per contact.
+
+**But precision alone collapses to a tiny contact list.** A model that contacts only the top 1% with 95% confidence has great precision but misses most responders. You also need enough **recall** for the campaign to have volume. The right framing is *precision at a chosen recall* — exactly what the threshold slider does.
+
+**PR AUC is the proper single-number summary.** It averages precision across all recall levels, so it tells you how well the model ranks across the full operating range — not just at one threshold. That's why the leaderboard above color-grades ROC AUC and PR AUC.
+
+**Versus a churn problem (which the midterm feedback was about).** Churn flips the economics: missing a churner loses lifetime value (high cost), false-flagging is just a small retention offer (low cost) → recall dominates. For *acquisition / response* like this dataset, the asymmetry reverses: missing one responder is one missed opportunity, but contacting 1,000 non-responders is real cash gone → **precision dominates**, balanced with enough recall to keep volume meaningful.
+
+**Practical priority for this project:**
+
+| Metric | When to use it |
+|---|---|
+| **PR AUC** | Headline single-number summary across all thresholds — best for imbalanced binary |
+| **ROC AUC** | Cross-model ranking; less skew-sensitive than precision |
+| **Precision** | The campaign-day decision: "what's our hit rate among contacted?" |
+| **Recall** | Volume sanity check — "are we capturing enough responders?" |
+| **Lift** *(precision / base rate)* | The marketing-friendly summary — "how much better than random?" — see widget below |
+| **F1** | Balanced single number when you need one |
+| **Accuracy** | Mostly to confirm the model beats the majority-baseline |
+""")
+
+    # ── PR AUC interpretation expander (live numbers) ──────────────
+    base_rate_pct = y_test.mean()
+    best_pr_auc = float(sorted_df["PR AUC"].iloc[0])
+    best_roc_auc = float(sorted_df["ROC AUC"].iloc[0])
+    pr_lift = best_pr_auc / base_rate_pct if base_rate_pct > 0 else 0.0
+
+    if best_pr_auc < base_rate_pct * 1.5:
+        verdict = ("⚠️ Below 1.5× base rate — model is barely beating random. "
+                   "Try dropping `class_weight='balanced'`, tuning hyperparameters, "
+                   "or adding interaction features.")
+    elif best_pr_auc < base_rate_pct * 2.5:
+        verdict = ("📊 ~2× base rate — modest signal. Common for direct-mail "
+                   "models in industry. Hyperparameter tuning + XGBoost may "
+                   "lift you another 0.05–0.10.")
+    elif best_pr_auc < base_rate_pct * 4.0:
+        verdict = ("✅ ~3× base rate — solid for this kind of behavioral data. "
+                   "Production targeting systems often live in this range.")
+    else:
+        verdict = (f"🎯 ~{pr_lift:.1f}× base rate — at the upper end of what "
+                   "academic papers report on this dataset. You're past the "
+                   "point where small modeling tweaks pay off much.")
+
+    with st.expander("📈 Is my PR AUC any good? — interpreting your number"):
+        st.markdown(f"""
+**Your best PR AUC**: **{best_pr_auc:.3f}** (model: `{sorted_df.index[0]}`)
+**Test-set base rate**: {base_rate_pct:.3f} ({base_rate_pct * 100:.1f}% positive class)
+**Lift over random**: **{pr_lift:.1f}×**
+
+{verdict}
+
+---
+
+**Why PR AUC numbers look "low" at first glance.** Unlike ROC AUC (random = 0.5), PR AUC is anchored to the base rate: a random classifier on a {base_rate_pct * 100:.0f}% positive class scores **PR AUC = {base_rate_pct:.2f}**. Most of the absolute scale (0 → {base_rate_pct:.2f}) is unreachable; the practical reachable range is {base_rate_pct:.2f} → 1.0. So your {best_pr_auc:.2f} should be read against {base_rate_pct:.2f}, not against 1.0.
+
+Your ROC AUC ({best_roc_auc:.3f}) corresponds to roughly the right zone given the imbalance — at ~{base_rate_pct * 100:.0f}% positives, a ROC AUC of {best_roc_auc:.2f} typically maps to a PR AUC of {max(0.0, best_roc_auc * 0.7 - 0.05):.2f}–{min(1.0, best_roc_auc * 0.85):.2f}. You're {('inside' if max(0.0, best_roc_auc * 0.7 - 0.05) <= best_pr_auc <= min(1.0, best_roc_auc * 0.85) else 'near')} that band.
+
+**Industry / academic benchmarks for similar problems**:
+
+| Range | Interpretation | Typical context |
+|---|---|---|
+| 0.15 – 0.20 | Near-random | Default / unbalanced sklearn baseline |
+| 0.30 – 0.50 | Modest | Production direct-mail / behavioral targeting |
+| 0.55 – 0.70 | Strong | Tuned ML + good features on similar data |
+| 0.70 + | Excellent | Approaching the dataset's intrinsic ceiling |
+
+**Practical takeaway**. At a PR AUC of {best_pr_auc:.2f}, your top-decile precision is likely **{min(0.95, best_pr_auc * 0.85):.0%}–{min(0.95, best_pr_auc + 0.1):.0%}** vs. the {base_rate_pct * 100:.1f}% baseline — that's the actual campaign lift, and it's what the Targeting widget below will show you when you slide the threshold up. The model isn't the bottleneck at this level; **translating ranking quality into the Tier A / B / C campaign action** (Conclusions page) is.
+""")
+
     st.markdown("---")
 
     # ── Performance comparison ─────────────────────────────────────
