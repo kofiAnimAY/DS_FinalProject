@@ -17,5 +17,7 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          git pull origin main --rebase
-          git push https://kofiAnimAY:$HF_TOKEN@huggingface.co/spaces/kofiAnimAY/DataScienceFinalProject main
+          # GitHub is the source of truth; HF Space is a deployment target.
+          # Force-push to overwrite HF's auto-created starter (Dockerfile,
+          # README, etc.) with whatever's on GitHub main.
+          git push --force https://kofiAnimAY:$HF_TOKEN@huggingface.co/spaces/kofiAnimAY/DataScienceFinalProject main
