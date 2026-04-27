@@ -1,12 +1,26 @@
 """
-DS4EVERYONE @ NYU — Final Project: ML Prediction App
-=====================================================
-A professional multi-page Streamlit application demonstrating
-end-to-end machine learning: EDA, visualization, prediction
-with 6+ models, explainability (SHAP), and hyperparameter tuning.
+DS4EVERYONE @ NYU — Final Project: Marketing Campaign Response Predictor
+=========================================================================
+A six-page Streamlit application that predicts customer response to a
+marketing campaign (binary classification, ~15% positive class) and turns
+the predictions into a tiered targeting strategy.
 
-Author: DS4E Students | Professor Gaëtan Brison
-Course: DS-UA 9111 — Data Science for Everyone
+Pages:
+- 🏠 Business Case & Data — problem framing, data quality
+- 📊 Data Visualization — distributions, correlations, multicollinearity,
+  full interactive exploration report (overview / variable explorer /
+  correlation matrix / outlier analysis)
+- 🤖 Model Prediction — train and compare 5 classifiers (Logistic, Tree,
+  Random Forest, Gradient Boosting, MLP); ROC + PR curves; threshold
+  simulator with auto-suggested optimal thresholds (max F1 / max profit)
+- 🔍 Explainability — SHAP values, permutation importance, per-customer
+  waterfall, Logistic Regression cross-check
+- ⚙️ Hyperparameter Tuning — Optuna search with W&B-backed past-experiment
+  browser
+- 📊 Conclusions & Recommendations — methodology, limitations, Tier A/B/C
+  action plan, Tier C measurement framework
+
+Course: DS-UA 9111 — Data Science for Everyone | Prof. Gaëtan Brison
 """
 
 import streamlit as st

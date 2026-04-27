@@ -22,6 +22,8 @@ from sklearn.metrics import (
     roc_auc_score, average_precision_score,
     confusion_matrix, roc_curve, precision_recall_curve,
 )
+from imblearn.over_sampling import SMOTE
+from imblearn.pipeline import Pipeline as ImbPipeline
 from data_loader import (
     dataset_selector, get_target, get_features, preprocess,
     preprocessing_callout,
@@ -80,6 +82,13 @@ def render():
     with col_cfg2:
         test_size = st.slider("Test size (%)", 10, 40, 20) / 100
         scale_data = st.checkbox("Standardize features", value=True)
+        use_smote = st.checkbox(
+            "Apply SMOTE oversampling",
+            value=False,
+            help="Synthesise minority-class samples to balance the training "
+                 "set. Resampling is applied inside an imblearn Pipeline so "
+                 "CV folds stay leak-free.",
+        )
 
     if not selected_features:
         st.warning("Please select at least one feature.")
@@ -143,12 +152,21 @@ def render():
                         "n_features": len(selected_features),
                         "features": selected_features,
                         "test_size": test_size, "scale_data": scale_data,
+                        "use_smote": use_smote,
                         "train_samples": len(X_train), "test_samples": len(X_test),
                     },
                     job_type="classify-baseline",
                 )
 
-            model = MODELS[name]()
+            def _build_estimator():
+                if use_smote:
+                    return ImbPipeline([
+                        ("smote", SMOTE(random_state=42)),
+                        ("clf", MODELS[name]()),
+                    ])
+                return MODELS[name]()
+
+            model = _build_estimator()
             model.fit(X_train, y_train)
             y_pred = model.predict(X_test)
             y_proba = model.predict_proba(X_test)[:, 1]
@@ -156,7 +174,7 @@ def render():
             probas[name] = y_proba
 
             cv_scores = cross_val_score(
-                MODELS[name](), X_train, y_train, cv=5, scoring="roc_auc",
+                _build_estimator(), X_train, y_train, cv=5, scoring="roc_auc",
             )
 
             metrics = {
@@ -286,7 +304,7 @@ That's literally what marketing reports after a campaign — *"of the people we 
                    "or adding interaction features.")
     elif best_pr_auc < base_rate_pct * 2.5:
         verdict = ("📊 ~2× base rate — modest signal. Common for direct-mail "
-                   "models in industry. Hyperparameter tuning + XGBoost may "
+                   "models in industry. Hyperparameter tuning + SMOTE may "
                    "lift you another 0.05–0.10.")
     elif best_pr_auc < base_rate_pct * 4.0:
         verdict = ("✅ ~3× base rate — solid for this kind of behavioral data. "
@@ -460,7 +478,9 @@ Your ROC AUC ({best_roc_auc:.3f}) corresponds to roughly the right zone given th
         "predicted probability **above** the threshold would be contacted. Lower "
         "the threshold to contact more people (higher recall, lower precision)."
     )
-    col_t1, col_t2 = st.columns([1, 3])
+
+    # Model selection + cost inputs
+    col_t1, col_t2, col_t3 = st.columns([1, 1, 1])
     with col_t1:
         default_idx = (model_choices.index(best_model)
                        if best_model in model_choices else 0)
@@ -468,11 +488,52 @@ Your ROC AUC ({best_roc_auc:.3f}) corresponds to roughly the right zone given th
             "Model for targeting", model_choices,
             index=default_idx, key="target_model",
         )
-        threshold = st.slider(
-            "Contact threshold", 0.05, 0.95, 0.5, 0.01, key="target_thresh",
+    with col_t2:
+        cost_per_contact = st.number_input(
+            "Cost per contact ($)", value=1.0, min_value=0.0, step=0.5,
+            help="Marketing cost of contacting one customer (mailing, "
+                 "fulfillment, etc.).",
+        )
+    with col_t3:
+        value_per_responder = st.number_input(
+            "Value per responder ($)", value=50.0, min_value=0.0, step=5.0,
+            help="Net revenue from one converting customer.",
         )
 
     proba_sel = probas[bm]
+
+    # ── Auto-suggested optimal thresholds (sweep) ──────────────────
+    sweep = np.linspace(0.05, 0.95, 91)
+    f1_at_t = np.array([
+        f1_score(y_test, proba_sel >= t, zero_division=0) for t in sweep
+    ])
+    profit_at_t = np.array([
+        ((proba_sel >= t) & (y_test == 1)).sum() * value_per_responder
+        - ((proba_sel >= t) & (y_test == 0)).sum() * cost_per_contact
+        for t in sweep
+    ])
+    best_f1_thr = float(sweep[int(np.argmax(f1_at_t))])
+    best_f1_val = float(f1_at_t.max())
+    best_profit_thr = float(sweep[int(np.argmax(profit_at_t))])
+    best_profit_val = float(profit_at_t.max())
+
+    sug_col1, sug_col2 = st.columns(2)
+    with sug_col1:
+        st.info(
+            f"💡 **Max F1 threshold**: `{best_f1_thr:.2f}` → F1 = {best_f1_val:.3f}"
+        )
+    with sug_col2:
+        st.info(
+            f"💰 **Max profit threshold**: `{best_profit_thr:.2f}` → "
+            f"net = ${best_profit_val:,.0f} on test set"
+        )
+
+    threshold = st.slider(
+        "Contact threshold", 0.05, 0.95, 0.5, 0.01, key="target_thresh",
+        help="Drag to either suggested value above to apply it.",
+    )
+
+    # ── Live metrics at the chosen threshold ────────────────────────
     contact_mask = proba_sel >= threshold
     tp = int(((contact_mask) & (y_test == 1)).sum())
     fp = int(((contact_mask) & (y_test == 0)).sum())
@@ -484,21 +545,22 @@ Your ROC AUC ({best_roc_auc:.3f}) corresponds to roughly the right zone given th
     recall_at_t = tp / total_positives if total_positives > 0 else 0.0
     base_rate = float(y_test.mean())
     lift = (precision_at_t / base_rate) if base_rate > 0 else 0.0
+    net_profit = tp * value_per_responder - fp * cost_per_contact
 
-    with col_t2:
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Contacted", f"{n_contacted:,}",
-                  delta=f"{contacted_pct:.1f}% of base", delta_color="off")
-        m2.metric("Responders caught (TP)", f"{tp:,}",
-                  delta=f"{recall_at_t:.1%} recall", delta_color="off")
-        m3.metric("Wasted contacts (FP)", f"{fp:,}",
-                  delta=f"{precision_at_t:.1%} precision", delta_color="off")
-        m4.metric("Missed (FN)", f"{fn:,}", delta_color="off")
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Contacted", f"{n_contacted:,}",
+              delta=f"{contacted_pct:.1f}% of base", delta_color="off")
+    m2.metric("Responders caught (TP)", f"{tp:,}",
+              delta=f"{recall_at_t:.1%} recall", delta_color="off")
+    m3.metric("Wasted contacts (FP)", f"{fp:,}",
+              delta=f"{precision_at_t:.1%} precision", delta_color="off")
+    m4.metric("Missed (FN)", f"{fn:,}", delta_color="off")
 
-        m5, m6, m7 = st.columns(3)
-        m5.metric("Response rate (contacted)", f"{precision_at_t:.1%}")
-        m6.metric("Base rate", f"{base_rate:.1%}")
-        m7.metric("Lift over base", f"{lift:.2f}×")
+    m5, m6, m7, m8 = st.columns(4)
+    m5.metric("Response rate (contacted)", f"{precision_at_t:.1%}")
+    m6.metric("Base rate", f"{base_rate:.1%}")
+    m7.metric("Lift over base", f"{lift:.2f}×")
+    m8.metric("Net profit (test)", f"${net_profit:,.0f}")
 
     st.markdown("---")
 

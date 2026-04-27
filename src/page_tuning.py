@@ -2,12 +2,12 @@
 Page 5 — Hyperparameter Tuning (Classification)
 =================================================
 Automated hyperparameter optimization using Optuna for the 5 classifiers,
-scored by ROC AUC on stratified cross-validation.
+scored by user-selectable PR AUC (default) or ROC AUC on stratified
+cross-validation.
 """
 
 import streamlit as st
 import pandas as pd
-import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from sklearn.model_selection import train_test_split, cross_val_score
@@ -35,9 +35,10 @@ def render():
 
     st.markdown("## ⚙️ Hyperparameter Tuning")
     st.caption(
-        "Optimize classifier hyperparameters with Optuna. Scoring is ROC AUC "
-        "on stratified 5-fold cross-validation — replacing manual trial-and-error "
-        "with automated Bayesian search."
+        "Optimize classifier hyperparameters with Optuna on stratified "
+        "cross-validation. Choose between **PR AUC** (default — better for our "
+        "imbalanced ~15% positive class) and **ROC AUC** as the optimization "
+        "objective."
     )
     preprocessing_callout()
     st.markdown("---")
@@ -64,7 +65,7 @@ def _render_new_tuning(ds_key, df, target, features):
     X_test_s = scaler.transform(X_test)
 
     # ── Config ──────────────────────────────────────────────────────
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
         model_name = st.selectbox(
             "Model to tune",
@@ -72,9 +73,22 @@ def _render_new_tuning(ds_key, df, target, features):
              "Logistic Regression", "Decision Tree"],
         )
     with col2:
-        n_trials = st.slider("Number of trials", 5, 100, 15, step=5)
+        scoring_label = st.selectbox(
+            "Optimization metric",
+            ["PR AUC (Average Precision)", "ROC AUC"],
+            index=0,
+            help="PR AUC is the more honest objective for imbalanced binary "
+                 "classification (~15% positive class here).",
+        )
     with col3:
+        n_trials = st.slider("Number of trials", 5, 100, 15, step=5)
+    with col4:
         cv_folds = st.slider("CV folds", 3, 10, 5)
+
+    scoring = ("average_precision" if scoring_label.startswith("PR AUC")
+               else "roc_auc")
+    cv_metric_label = ("PR AUC (CV)" if scoring == "average_precision"
+                       else "ROC AUC (CV)")
 
     # ── Hyperparameter search spaces ────────────────────────────────
     st.markdown("### 🔧 Search Space")
@@ -234,7 +248,7 @@ def _render_new_tuning(ds_key, df, target, features):
                 X_use, y_use = X_train, y_train
 
             scores = cross_val_score(
-                model, X_use, y_use, cv=cv_folds, scoring="roc_auc", n_jobs=1,
+                model, X_use, y_use, cv=cv_folds, scoring=scoring, n_jobs=1,
             )
             return scores.mean()
 
@@ -246,19 +260,21 @@ def _render_new_tuning(ds_key, df, target, features):
         def callback(study, trial):
             progress.progress(
                 (trial.number + 1) / n_trials,
-                text=f"Trial {trial.number + 1}/{n_trials} — Best ROC AUC: "
+                text=f"Trial {trial.number + 1}/{n_trials} — "
+                     f"Best {cv_metric_label.replace(' (CV)', '')}: "
                      f"{study.best_value:.4f}",
             )
             score = trial.value if trial.value is not None else float("nan")
             params_str = ", ".join(f"{k}={v}" for k, v in trial.params.items())
+            metric_short = cv_metric_label.replace(" (CV)", "")
             log_lines.append(
                 f"Trial {trial.number + 1:>3}/{n_trials} │ "
-                f"ROC AUC={score:.4f} │ best={study.best_value:.4f} │ {params_str}"
+                f"{metric_short}={score:.4f} │ best={study.best_value:.4f} │ {params_str}"
             )
             live_log.code("\n".join(log_lines), language="text")
             wandb_tracker.log_metrics(wb_run, {
-                "trial/roc_auc": score if score == score else 0.0,
-                "trial/best_roc_auc": study.best_value,
+                "trial/score": score if score == score else 0.0,
+                "trial/best_score": study.best_value,
             }, step=trial.number)
 
         study.optimize(objective, n_trials=n_trials, callbacks=[callback])
@@ -317,7 +333,7 @@ def _render_new_tuning(ds_key, df, target, features):
         # Store results
         trials_data = []
         for t in study.trials:
-            row = {"Trial": t.number, "ROC AUC (CV)": t.value}
+            row = {"Trial": t.number, cv_metric_label: t.value}
             row.update(t.params)
             trials_data.append(row)
 
@@ -334,11 +350,13 @@ def _render_new_tuning(ds_key, df, target, features):
         st.session_state["tune_y_pred"] = y_pred
         st.session_state["tune_y_proba"] = y_proba
         st.session_state["tune_model_name"] = model_name
+        st.session_state["tune_metric_label"] = cv_metric_label
         st.session_state["tune_ready"] = True
 
         if wb_run is not None:
             wandb_tracker.log_metrics(wb_run, {
-                "final/best_cv_roc_auc": study.best_value,
+                "final/best_cv_score": study.best_value,
+                "final/scoring_metric": scoring,
                 "final/test_roc_auc": st.session_state["tune_test_metrics"]["ROC AUC"],
                 "final/test_pr_auc": st.session_state["tune_test_metrics"]["PR AUC"],
                 "final/test_f1": st.session_state["tune_test_metrics"]["F1"],
@@ -365,13 +383,16 @@ def _render_new_tuning(ds_key, df, target, features):
     y_pred = st.session_state["tune_y_pred"]
     y_proba = st.session_state["tune_y_proba"]
     tuned_model = st.session_state["tune_model_name"]
+    # Use the metric label saved at training time (not the live selectbox value
+    # — the user may have changed it since)
+    cv_metric_label = st.session_state.get("tune_metric_label", "ROC AUC (CV)")
 
     st.markdown("---")
 
     # ── Best parameters ─────────────────────────────────────────────
     st.markdown("### 🏆 Best Hyperparameters")
     st.success(
-        f"**{tuned_model}** — Best CV ROC AUC: "
+        f"**{tuned_model}** — Best {cv_metric_label.replace(' (CV)', '')}: "
         f"{st.session_state['tune_study'].best_value:.4f}"
     )
 
@@ -394,10 +415,10 @@ def _render_new_tuning(ds_key, df, target, features):
     col_h1, col_h2 = st.columns(2)
 
     with col_h1:
-        best_so_far = trials_df["ROC AUC (CV)"].cummax()
+        best_so_far = trials_df[cv_metric_label].cummax()
         fig = go.Figure()
         fig.add_trace(go.Scatter(
-            x=trials_df["Trial"], y=trials_df["ROC AUC (CV)"],
+            x=trials_df["Trial"], y=trials_df[cv_metric_label],
             mode="markers", name="Trial score",
             marker=dict(color="#A5B4FC", size=6, opacity=0.5),
         ))
@@ -409,7 +430,7 @@ def _render_new_tuning(ds_key, df, target, features):
         fig.update_layout(
             template="plotly_white", height=400,
             title="Optimization Progress",
-            xaxis_title="Trial", yaxis_title="ROC AUC (CV)",
+            xaxis_title="Trial", yaxis_title=cv_metric_label,
         )
         st.plotly_chart(fig, width='stretch')
 
@@ -459,9 +480,9 @@ def _render_new_tuning(ds_key, df, target, features):
 
     # ── Parallel coordinates ────────────────────────────────────────
     st.markdown("### 🔀 Hyperparameter Exploration")
-    param_names = [c for c in trials_df.columns if c not in ("Trial", "ROC AUC (CV)")]
+    param_names = [c for c in trials_df.columns if c not in ("Trial", cv_metric_label)]
     if len(param_names) >= 2:
-        dims = [dict(label="ROC AUC (CV)", values=trials_df["ROC AUC (CV)"])]
+        dims = [dict(label=cv_metric_label, values=trials_df[cv_metric_label])]
         for p in param_names:
             col = trials_df[p]
             if col.dtype == object:
@@ -476,11 +497,11 @@ def _render_new_tuning(ds_key, df, target, features):
                 dims.append(dict(label=p, values=col))
         fig = go.Figure(go.Parcoords(
             line=dict(
-                color=trials_df["ROC AUC (CV)"],
+                color=trials_df[cv_metric_label],
                 colorscale="Blues",
                 showscale=True,
-                cmin=trials_df["ROC AUC (CV)"].min(),
-                cmax=trials_df["ROC AUC (CV)"].max(),
+                cmin=trials_df[cv_metric_label].min(),
+                cmax=trials_df[cv_metric_label].max(),
             ),
             dimensions=dims,
         ))
@@ -490,7 +511,7 @@ def _render_new_tuning(ds_key, df, target, features):
     # ── Experiment log ──────────────────────────────────────────────
     st.markdown("### 📋 Full Experiment Log")
     st.dataframe(
-        trials_df.sort_values("ROC AUC (CV)", ascending=False).style.format(
+        trials_df.sort_values(cv_metric_label, ascending=False).style.format(
             {c: "{:.4f}" for c in trials_df.select_dtypes(include="float").columns}
         ),
         width='stretch',
@@ -537,10 +558,15 @@ def _render_past_experiments() -> None:
     rows = []
     for r in runs:
         s = r["summary"]
+        # `final/best_cv_score` is the new metric-agnostic key; fall back to
+        # the older `final/best_cv_roc_auc` for runs logged before the switch.
+        best_cv = s.get("final/best_cv_score", s.get("final/best_cv_roc_auc"))
+        scoring_used = s.get("final/scoring_metric", "roc_auc")
         rows.append({
             "Run name": r["name"],
             "Model": r["model"],
-            "Best CV ROC AUC": s.get("final/best_cv_roc_auc"),
+            "Best CV Score": best_cv,
+            "Optimised on": scoring_used,
             "Test ROC AUC": s.get("final/test_roc_auc"),
             "Test PR AUC": s.get("final/test_pr_auc"),
             "Test F1": s.get("final/test_f1"),
@@ -576,7 +602,7 @@ def _render_past_experiments() -> None:
     display = completed.drop(columns=["URL", "ID"])
     st.dataframe(
         display.style.format({
-            "Best CV ROC AUC": "{:.4f}",
+            "Best CV Score": "{:.4f}",
             "Test ROC AUC": "{:.4f}",
             "Test PR AUC": "{:.4f}",
             "Test F1": "{:.4f}",
