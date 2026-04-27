@@ -582,23 +582,23 @@ def render():
     st.markdown("---")
 
     # ── 4. Box plots ────────────────────────────────────────────────
-    st.markdown("### 📦 Box Plots — Outlier Detection")
-    st.caption("Box plots only make sense for continuous variables — binary flags and small-count integers are excluded.")
-    if continuous_feats:
-        box_feats = st.multiselect(
-            "Features for box plots", continuous_feats,
-            default=continuous_feats[: min(3, len(continuous_feats))], key="box",
-        )
-        if box_feats:
-            fig = go.Figure()
-            for feat in box_feats:
-                fig.add_trace(go.Box(y=df[feat], name=feat, marker_color="#4338CA"))
-            fig.update_layout(template="plotly_white", height=450, showlegend=False)
-            st.plotly_chart(fig, width='stretch')
-    else:
-        st.info("No continuous features available for box plots.")
+    # st.markdown("### 📦 Box Plots — Outlier Detection")
+    # st.caption("Box plots only make sense for continuous variables — binary flags and small-count integers are excluded.")
+    # if continuous_feats:
+    #     box_feats = st.multiselect(
+    #         "Features for box plots", continuous_feats,
+    #         default=continuous_feats[: min(3, len(continuous_feats))], key="box",
+    #     )
+    #     if box_feats:
+    #         fig = go.Figure()
+    #         for feat in box_feats:
+    #             fig.add_trace(go.Box(y=df[feat], name=feat, marker_color="#4338CA"))
+    #         fig.update_layout(template="plotly_white", height=450, showlegend=False)
+    #         st.plotly_chart(fig, width='stretch')
+    # else:
+    #     st.info("No continuous features available for box plots.")
 
-    st.markdown("---")
+    # st.markdown("---")
 
     # ── 6. Interactive Data Exploration Report ──────────────────────
     st.markdown("## 📑 Data Exploration Report")
