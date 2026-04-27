@@ -223,6 +223,8 @@ def render() -> None:
 
     with tabs[0]:
         _render_tree_tab(payload, model_name, features, info)
+        st.markdown("---")
+        _render_logistic_crosscheck(df, target, features, info)
     with tabs[1]:
         _render_permutation_tab(payload, features, info)
     if has_shap:
@@ -241,8 +243,7 @@ def render() -> None:
     )
 
     # ── Cross-check: Logistic Regression coefficients ──────────────
-    st.markdown("---")
-    _render_logistic_crosscheck(df, target, features, info)
+
 
 
 def _render_logistic_crosscheck(df, target, features, info) -> None:
