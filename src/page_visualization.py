@@ -13,7 +13,6 @@ from plotly.subplots import make_subplots
 from data_loader import (
     dataset_selector, get_target, get_features,
     categorical_chart_kind, categorical_labels,
-    preprocess, compute_vif,
 )
 
 
@@ -285,53 +284,6 @@ def _render_data_report(df, features, target, info):
 
     st.markdown("---")
 
-    # ── Correlation Matrix ─────────────────────────────────────────
-    st.markdown("#### 🔗 Correlation Matrix (method-selectable)")
-    corr_cols = [c for c in features + [target] if c in df.columns
-                 and pd.api.types.is_numeric_dtype(df[c]) and c not in EXCLUDE]
-
-    ccol1, ccol2 = st.columns([1, 1])
-    with ccol1:
-        corr_method = st.selectbox(
-            "Method", ["pearson", "spearman", "kendall"], index=0, key="corr_method"
-        )
-    with ccol2:
-        min_abs = st.slider(
-            "Hide |corr| below", 0.0, 1.0, 0.0, 0.05, key="corr_thresh",
-            help="Cells with absolute correlation below this threshold are hidden.",
-        )
-
-    corr = df[corr_cols].corr(method=corr_method)
-    display_corr = corr.where(corr.abs() >= min_abs)
-
-    fig = px.imshow(
-        display_corr,
-        text_auto=".2f",
-        color_continuous_scale="RdBu_r",
-        aspect="auto",
-        zmin=-1, zmax=1,
-        title=f"{corr_method.capitalize()} correlation matrix",
-    )
-    fig.update_layout(template="plotly_white", height=max(450, 26 * len(corr_cols)))
-    st.plotly_chart(fig, width='stretch')
-
-    if target in corr.columns:
-        target_corr = corr[target].drop(target).dropna().sort_values(
-            key=lambda s: s.abs(), ascending=False
-        )
-        st.markdown(f"**Top features correlated with `{target}`:**")
-        for feat, val in target_corr.head(8).items():
-            direction = "+" if val > 0 else "−"
-            bar_width = int(abs(val) * 100)
-            st.markdown(
-                f"- **{feat}** → {direction}{abs(val):.3f} "
-                f'<span style="display:inline-block;height:10px;width:{bar_width}px;'
-                f'background:#4338CA;border-radius:4px;vertical-align:middle;"></span>',
-                unsafe_allow_html=True,
-            )
-
-    st.markdown("---")
-
     # ── Outlier Analysis ───────────────────────────────────────────
     st.markdown("#### ⚠️ Outlier Analysis")
     ocol1, ocol2 = st.columns([1, 1])
@@ -409,7 +361,9 @@ def _render_data_report(df, features, target, info):
 def render():
     ds_key, df, info = dataset_selector()
     target = get_target(ds_key)
-    features = get_features(df, target)
+    # Drop non-feature identifiers / constants from anything we visualise
+    NON_FEATURES = {"ID", "Z_CostContact", "Z_Revenue"}
+    features = [f for f in get_features(df, target) if f not in NON_FEATURES]
 
     st.markdown("## 📊 Data Visualization")
     st.caption("Explore the dataset through interactive charts to uncover patterns and insights.")
@@ -599,7 +553,9 @@ def render():
 
     # ── 3. Correlation heatmap ──────────────────────────────────────
     st.markdown("### 🔥 Correlation Heatmap")
-    corr = df.corr(numeric_only=True)
+    corr_cols = [c for c in df.select_dtypes(include="number").columns
+                 if c not in NON_FEATURES]
+    corr = df[corr_cols].corr()
     fig = px.imshow(
         corr,
         text_auto=".2f",
@@ -625,102 +581,7 @@ def render():
 
     st.markdown("---")
 
-    # ── 3b. Multicollinearity check (on modeling features) ─────────
-    st.markdown("### 🧬 Multicollinearity Check — Modeling Features")
-    st.caption(
-        "Some of our engineered features (`TotalSpend`, `TotalAccepted`, "
-        "`TotalPurchases`) are sums of their components, so they're collinear "
-        "by construction. Tree models exploit the granularity; regularized "
-        "Logistic Regression handles the redundancy via L2. This panel makes "
-        "the issue visible rather than silent."
-    )
-    with st.expander("📖 Why this matters"):
-        st.markdown(
-            "When two features carry the same information, linear models "
-            "split the coefficient between them arbitrarily and can produce "
-            "**counterintuitive signs** (e.g. negative coefficient on a "
-            "clearly positive predictor). VIF (Variance Inflation Factor) is "
-            "the standard diagnostic:\n\n"
-            "- **VIF ≈ 1** — no collinearity\n"
-            "- **VIF 1–5** — moderate, usually fine\n"
-            "- **VIF 5–10** — high — investigate\n"
-            "- **VIF > 10** — severe — feature is a near-linear combination "
-            "of others; coefficient estimates are unreliable\n\n"
-            "Tree-based models are unaffected by VIF, but the interpretation "
-            "story still benefits from knowing which features are duplicates."
-        )
-
-    df_pp = preprocess(df)
-    pp_features = [c for c in df_pp.select_dtypes(include="number").columns
-                   if c != target]
-
-    mc_col1, mc_col2 = st.columns([1, 1])
-    with mc_col1:
-        st.markdown("**High-correlation pairs** (|r| ≥ 0.8)")
-        corr_pp = df_pp[pp_features].corr().abs()
-        # Upper triangle only, exclude diagonal
-        pairs = []
-        for i, f1 in enumerate(pp_features):
-            for f2 in pp_features[i + 1:]:
-                r = corr_pp.loc[f1, f2]
-                if r >= 0.8:
-                    pairs.append({"Feature A": f1, "Feature B": f2, "|r|": r})
-        if pairs:
-            pairs_df = pd.DataFrame(pairs).sort_values("|r|", ascending=False)
-            st.dataframe(
-                pairs_df.style.format({"|r|": "{:.3f}"})
-                .background_gradient(subset=["|r|"], cmap="Reds"),
-                width='stretch', hide_index=True,
-            )
-        else:
-            st.success("✅ No pairs above |r| = 0.8 — collinearity is mild.")
-
-    with mc_col2:
-        st.markdown("**Variance Inflation Factor (VIF)**")
-        vif_df = compute_vif(df_pp, pp_features)
-        # Cap inf for display
-        vif_display = vif_df.copy()
-        vif_display["VIF"] = vif_display["VIF"].replace(float("inf"), 999.0)
-        st.dataframe(
-            vif_display.style.format({"VIF": "{:.2f}"})
-            .background_gradient(subset=["VIF"], cmap="Reds", vmin=1, vmax=10),
-            width='stretch', hide_index=True, height=400,
-        )
-        n_high = int((vif_df["VIF"] >= 10).sum())
-        if n_high > 0:
-            st.caption(f"⚠️ {n_high} feature(s) with VIF ≥ 10 — expected here, "
-                       "since `Total*` engineered features are sums of their components.")
-
-    st.markdown("---")
-
-    # ── 4. Scatter plot explorer ────────────────────────────────────
-    st.markdown("### 🔗 Feature vs Target Explorer")
-    col_a, col_b = st.columns(2)
-    with col_a:
-        x_feat = st.selectbox("X-axis feature", features, index=0)
-    with col_b:
-        color_feat = st.selectbox(
-            "Color by (optional)", ["None"] + features, index=0
-        )
-
-    color = color_feat if color_feat != "None" else None
-    fig = px.scatter(
-        df, x=x_feat, y=target, color=color,
-        color_continuous_scale="Blues",
-        opacity=0.5, title=f"{x_feat} vs {target}",
-    )
-    fig.update_layout(template="plotly_white", height=500)
-    # Force integer ticks when either axis is an integer-valued variable
-    # (e.g. Kidhome, Teenhome, AcceptedCmp, Complain, Response)
-    if categorical_chart_kind(df[x_feat]) in ("pie", "bar"):
-        fig.update_xaxes(tickmode="linear", tick0=0, dtick=1, tickformat="d")
-    if categorical_chart_kind(df[target]) in ("pie", "bar"):
-        fig.update_yaxes(tickmode="linear", tick0=0, dtick=1, tickformat="d")
-    st.plotly_chart(fig, width='stretch')
-
-    st.markdown("---")
-
-    # ── 5. Box plots ────────────────────────────────────────────────
+    # ── 4. Box plots ────────────────────────────────────────────────
     st.markdown("### 📦 Box Plots — Outlier Detection")
     st.caption("Box plots only make sense for continuous variables — binary flags and small-count integers are excluded.")
     if continuous_feats:
