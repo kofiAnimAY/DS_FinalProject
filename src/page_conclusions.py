@@ -354,24 +354,6 @@ def render() -> None:
 
     st.markdown("---")
 
-    # ── Section 8: Measuring Tier C success ─────────────────────────
-    st.markdown("## 🧪 How We'd Measure Tier C Success")
-    st.markdown(
-        "Treating Tier C with new methods is a hypothesis, not a guarantee. "
-        "Any alternative tactic needs to be evaluated as a real experiment, "
-        "not a vibe check on aggregate response rates:"
-    )
-    st.markdown("""
-    1. **Hold out a true control group** inside Tier C — same segment, no contact, same period. Without it, you can't separate the lift from secular trends.
-    2. **Measure incremental response**, not absolute. The right metric is `treated_response_rate − control_response_rate`. A 5% absolute response means nothing if the control also converts at 5%.
-    3. **Compute net contribution.** `(incremental responders × average customer value) − (alternative-method cost)`. Even a small positive lift can be margin-positive if the channel is cheap (SMS, organic social) — and a large lift can be margin-negative if the channel is expensive (custom mailers, in-store events).
-    4. **Run for at least one full lifecycle period** — typically 30–90 days for retail / CPG. Short windows miss delayed conversion, especially for relationship-building tactics rather than direct-response promotions.
-    5. **Pre-register the success criterion.** Decide before launching what lift counts as a win. Otherwise, you'll be tempted to slice the data until something looks positive.
-    6. **Feed wins back into the model.** Every successful Tier C tactic should generate a new feature signal (e.g. `responded_to_sms_reminder`) that updates the next training cycle. Customers who were "unreachable" become a new addressable segment.
-    """)
-
-    st.markdown("---")
-
     # ── Section 9: Methodology ──────────────────────────────────────
     st.markdown("## 🔬 Methodology")
     st.markdown(
