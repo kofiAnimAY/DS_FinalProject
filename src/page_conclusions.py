@@ -417,7 +417,6 @@ def render() -> None:
 
     7. **Cold-start blind spot.** Every feature is behavioral (past spend, past acceptance, recency, tenure). A brand-new customer with no history can't be scored by this model — yet they're often who you'd most want to target. Cold-start needs a separate model or a content-based / lookalike approach.
 
-    8. **Multicollinearity.** Several engineered features (`TotalSpend`, `TotalPurchases`, `TotalAccepted`) are sums of their components. Tree models exploit the granularity safely, but Logistic coefficients can be unstable. The Multicollinearity Check on the Visualization page flags this; the SHAP-vs-Logistic cross-check on the Explainability page makes it auditable.
     """)
 
     st.markdown("---")
